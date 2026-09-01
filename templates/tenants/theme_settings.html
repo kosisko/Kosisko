@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+
+{% block page_title %}Live Theme & Branding Customizer{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl space-y-6">
+
+    <div class="bg-white p-6 rounded-2xl border shadow-sm">
+        <h2 class="text-xl font-bold text-gray-800 mb-1 flex items-center gap-2">
+            <i class="fa-solid fa-palette text-indigo-600"></i> Custom Theme Settings
+        </h2>
+        <p class="text-xs text-gray-500 mb-6">अपनी कंपनी की ब्रांडिंग के हिसाब से सॉफ्टवेयर के कलर्स और लोगो कस्टमाइज़ करें।</p>
+
+        {% if messages %}
+            {% for message in messages %}
+                <div class="p-3 mb-4 rounded-xl text-xs font-semibold bg-green-50 text-green-800 border border-green-200">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <form method="POST" enctype="multipart/form-data" class="space-y-6">
+            {% csrf_token %}
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Primary Accent Color Picker -->
+                <div class="space-y-2">
+                    <label class="block text-xs font-bold text-gray-700">Primary Accent Color (Buttons/Active Tabs)</label>
+                    <div class="flex items-center gap-3">
+                        <input type="color" name="primary_color" value="{{ branding.primary_color|default:'#4F46E5' }}" 
+                               class="w-12 h-12 rounded-xl border border-gray-300 cursor-pointer p-1">
+                        <span class="font-mono text-sm font-semibold text-gray-700">{{ branding.primary_color }}</span>
+                    </div>
+                </div>
+
+                <!-- Sidebar Background Color Picker -->
+                <div class="space-y-2">
+                    <label class="block text-xs font-bold text-gray-700">Sidebar Background Color</label>
+                    <div class="flex items-center gap-3">
+                        <input type="color" name="sidebar_bg_color" value="{{ branding.sidebar_bg_color|default:'#1E293B' }}" 
+                               class="w-12 h-12 rounded-xl border border-gray-300 cursor-pointer p-1">
+                        <span class="font-mono text-sm font-semibold text-gray-700">{{ branding.sidebar_bg_color }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Custom Logo Upload -->
+            <div class="border-t pt-6 space-y-2">
+                <label class="block text-xs font-bold text-gray-700">Custom Company Logo (White-Labeling)</label>
+                <input type="file" name="custom_logo" accept="image/*" 
+                       class="w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+            </div>
+
+            <button type="submit" class="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-sm text-sm flex items-center gap-2">
+                <i class="fa-solid fa-floppy-disk"></i> Save & Apply Live Theme
+            </button>
+        </form>
+    </div>
+
+</div>
+{% endblock %}

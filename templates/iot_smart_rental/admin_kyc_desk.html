@@ -1,0 +1,138 @@
+{% extends 'base.html' %}
+
+{% block title %}KYC Verification Desk - Admin Control Panel{% endblock %}
+
+{% block content %}
+<div class="container-fluid my-4 px-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-1">📄 Customer KYC Verification Desk</h2>
+            <p class="text-muted mb-0">Review identity documents and approve onboarding dispatches</p>
+        </div>
+        <div>
+            <a href="{% url 'iot_smart_rental:admin_control_panel' %}" class="btn btn-outline-secondary">
+                ⬅️ Back to Command Center
+            </a>
+        </div>
+    </div>
+
+    <!-- Pending KYC Verification Cards -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-warning text-dark border-0 pt-3 px-4 fw-bold fs-5">
+            ⏳ Pending KYC Approvals ({{ pending_leads.count }})
+        </div>
+        <div class="card-body p-4">
+            {% if pending_leads %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Lead ID</th>
+                                <th>Customer Name & Phone</th>
+                                <th>Installation Address</th>
+                                <th>Booking Deposit</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for lead in pending_leads %}
+                            <tr>
+                                <td><strong>#{{ lead.id }}</strong></td>
+                                <td>
+                                    <strong class="d-block">{{ lead.customer_name }}</strong>
+                                    <small class="text-muted">📱 {{ lead.customer_phone }}</small>
+                                </td>
+                                <td>
+                                    <small class="d-block text-wrap" style="max-width: 250px;">{{ lead.installation_address }}</small>
+                                </td>
+                                <td>
+                                    <span class="badge bg-success fs-6">₹{{ lead.booking_amount_paid }} Paid</span>
+                                </td>
+                                <td>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-sm btn-success fw-bold" onclick="updateKYC('{{ lead.id }}', 'APPROVE')">
+                                            ✅ Approve KYC
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger" onclick="updateKYC('{{ lead.id }}', 'REJECT')">
+                                            ❌ Reject
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-muted text-center my-3">🎉 No pending KYC verifications!</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Verified Leads History -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-0 pt-3 px-4 fw-bold fs-5">
+            ✅ Approved & Active Dispatches
+        </div>
+        <div class="card-body p-4">
+            {% if verified_leads %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Lead ID</th>
+                                <th>Customer Name</th>
+                                <th>Status</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for lead in verified_leads %}
+                            <tr>
+                                <td>#{{ lead.id }}</td>
+                                <td>{{ lead.customer_name }} ({{ lead.customer_phone }})</td>
+                                <td><span class="badge bg-info text-dark">{{ lead.status }}</span></td>
+                                <td><small class="text-muted">{{ lead.created_at|date:"d M Y, h:i A" }}</small></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-muted text-center my-3">No verified dispatches recorded yet.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+function updateKYC(leadId, action) {
+    let reason = '';
+    if(action === 'REJECT') {
+        reason = prompt('Please enter rejection reason:');
+        if(!reason) return;
+    }
+
+    if(confirm(`Are you sure you want to ${action} this KYC record?`)) {
+        fetch(`/iot/admin/kyc-update/${leadId}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: `action=${action}&reason=${encodeURIComponent(reason)}`
+        })
+        .then(response => response.json())
+        .then(data => {
+            if(data.success) {
+                alert('🎉 ' + data.message);
+                location.reload();
+            } else {
+                alert('❌ Error: ' + data.message);
+            }
+        });
+    }
+}
+</script>
+{% endblock %}

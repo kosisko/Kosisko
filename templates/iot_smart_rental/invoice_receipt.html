@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Payment Receipt - {{ invoice.invoice_number }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .invoice-card { max-width: 700px; margin: 30px auto; background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 40px; }
+        @media print { .no-print { display: none; } body { background: #fff; } .invoice-card { box-shadow: none; margin: 0; max-width: 100%; padding: 0; } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="invoice-card">
+        <!-- Header -->
+        <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
+            <div>
+                <h3 class="fw-bold text-primary mb-0">{{ invoice.tenant.name|default:"Kosisko Smart Rental Services" }}</h3>
+                <small class="text-muted">GSTIN: 23AAAAA0000A1Z5 | Smart IoT & Water Systems</small>
+            </div>
+            <div class="text-end">
+                <span class="badge bg-success fs-6 mb-1">PAID ✅</span>
+                <p class="small text-muted mb-0">Date: {{ invoice.paid_at|date:"d M Y, h:i A" }}</p>
+            </div>
+        </div>
+
+        <!-- Invoice Meta -->
+        <div class="row my-4">
+            <div class="col-6">
+                <h6 class="fw-bold text-muted mb-1">BILLED TO:</h6>
+                <strong>{{ invoice.user.get_full_name|default:invoice.user.username }}</strong>
+                <p class="small text-muted mb-0">Phone / User ID: {{ invoice.user.username }}</p>
+                {% if invoice.device %}
+                <p class="small text-muted mb-0">Device ID: {{ invoice.device.device_name }} ({{ invoice.device.tuya_device_id }})</p>
+                {% endif %}
+            </div>
+            <div class="col-6 text-end">
+                <h6 class="fw-bold text-muted mb-1">INVOICE DETAILS:</h6>
+                <p class="small mb-1"><strong>Invoice No:</strong> {{ invoice.invoice_number }}</p>
+                <p class="small mb-1"><strong>Txn ID:</strong> {{ invoice.transaction_id }}</p>
+                <p class="small mb-0"><strong>Payment Mode:</strong> {{ invoice.payment_mode }}</p>
+            </div>
+        </div>
+
+        <!-- Itemized Table -->
+        <table class="table table-bordered my-4">
+            <thead class="table-light">
+                <tr>
+                    <th>Description</th>
+                    <th class="text-center">Type</th>
+                    <th class="text-end">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>
+                        <strong>{{ invoice.get_invoice_type_display }}</strong>
+                        <small class="d-block text-muted">30-Day Automated IoT Smart RO Subscription Plan</small>
+                    </td>
+                    <td class="text-center"><span class="badge bg-light text-dark">Recurring</span></td>
+                    <td class="text-end">₹{{ invoice.amount_paid }}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- Total Calculation -->
+        <div class="row justify-content-end my-4">
+            <div class="col-6">
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">Taxable Amount:</span>
+                    <span>₹{{ invoice.amount_paid|add:"-76.12" }}</span>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">GST (18% Included):</span>
+                    <span>₹{{ invoice.tax_amount }}</span>
+                </div>
+                <hr>
+                <div class="d-flex justify-content-between fw-bold fs-5 text-primary">
+                    <span>Total Paid:</span>
+                    <span>₹{{ invoice.amount_paid }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer Buttons -->
+        <div class="text-center mt-5 pt-3 border-top no-print">
+            <button onclick="window.print()" class="btn btn-primary px-4 fw-bold me-2">🖨️ Print Receipt</button>
+            <button onclick="window.close()" class="btn btn-outline-secondary px-4">Close</button>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

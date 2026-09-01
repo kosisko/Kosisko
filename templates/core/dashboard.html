@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+
+{% block page_title %}
+    {% if current_tenant %}
+        {{ branding.display_name }} - Overview
+    {% else %}
+        Kosisko Prime Admin Portal
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+    <!-- Top Banner Info -->
+    <div class="bg-gradient-to-r from-indigo-600 to-slate-800 text-white p-6 rounded-xl shadow-md">
+        <h2 class="text-3xl font-extrabold mb-1">
+            {% if current_tenant %}
+                Welcome, {{ current_tenant.name }} 👋
+            {% else %}
+                Welcome to Kosisko SaaS Master Control 🌐
+            {% endif %}
+        </h2>
+        <p class="opacity-90">
+            {% if current_tenant %}
+                Your domain <code class="bg-black/20 px-2 py-1 rounded text-yellow-300">{{ current_tenant.subdomain }}.localhost:8000</code> is isolated & active.
+            {% else %}
+                You are currently viewing the central platform admin dashboard.
+            {% endif %}
+        </p>
+    </div>
+
+    <!-- Active Apps Cards Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        <!-- App Card 1: POS Billing -->
+        <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm relative overflow-hidden">
+            <div class="flex items-center justify-between mb-4">
+                <div class="p-3 bg-indigo-50 text-indigo-600 rounded-lg">
+                    <i class="fa-solid fa-cash-register text-2xl"></i>
+                </div>
+                {% if 'pos_billing' in installed_apps %}
+                    <span class="text-xs bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-semibold">Active App</span>
+                {% else %}
+                    <span class="text-xs bg-gray-100 text-gray-500 px-2.5 py-1 rounded-full font-semibold">Not Installed</span>
+                {% endif %}
+            </div>
+            <h3 class="font-bold text-lg text-gray-800">POS & Billing Engine</h3>
+            <p class="text-sm text-gray-500 mt-1">GST Billing, Auto UPI QR, and WhatsApp Invoice sharing.</p>
+        </div>
+
+        <!-- App Card 2: CRM Engine -->
+        <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm relative overflow-hidden">
+            <div class="flex items-center justify-between mb-4">
+                <div class="p-3 bg-blue-50 text-blue-600 rounded-lg">
+                    <i class="fa-solid fa-users-gear text-2xl"></i>
+                </div>
+                {% if 'crm_sales' in installed_apps %}
+                    <span class="text-xs bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-semibold">Active App</span>
+                {% else %}
+                    <span class="text-xs bg-gray-100 text-gray-500 px-2.5 py-1 rounded-full font-semibold">Not Installed</span>
+                {% endif %}
+            </div>
+            <h3 class="font-bold text-lg text-gray-800">CRM & Sales Pipeline</h3>
+            <p class="text-sm text-gray-500 mt-1">Lead tracking, customer follow-ups & sales analytics.</p>
+        </div>
+
+        <!-- App Card 3: AI Routine Assistant -->
+        <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm relative overflow-hidden">
+            <div class="flex items-center justify-between mb-4">
+                <div class="p-3 bg-purple-50 text-purple-600 rounded-lg">
+                    <i class="fa-solid fa-wand-magic-sparkles text-2xl"></i>
+                </div>
+                <span class="text-xs bg-purple-100 text-purple-700 px-2.5 py-1 rounded-full font-semibold">Core AI Engine</span>
+            </div>
+            <h3 class="font-bold text-lg text-gray-800">AI Assistant & Reminders</h3>
+            <p class="text-sm text-gray-500 mt-1">Smart routine tracking & automated business insights.</p>
+        </div>
+
+    </div>
+
+</div>
+{% endblock %}

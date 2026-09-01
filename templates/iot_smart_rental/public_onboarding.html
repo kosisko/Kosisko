@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+
+{% block title %}Book Smart Rental Machine - Onboarding{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card border-0 shadow-lg rounded-3">
+                <div class="card-header bg-primary text-white text-center py-4">
+                    <h3 class="fw-bold mb-1">💧 Book Smart RO / Appliance</h3>
+                    <p class="mb-0 text-white-50">Zero Maintenance Cost | 100% Pure & Healthy Water</p>
+                </div>
+                <div class="card-body p-4">
+                    {% if ref_code %}
+                    <div class="alert alert-success d-flex align-items-center mb-4">
+                        <span class="fs-4 me-2">🎉</span>
+                        <div>
+                            <strong>Referral Discount Applied!</strong>
+                            <small class="d-block">Booked via Referral Code: <strong>{{ ref_code }}</strong></small>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Offer Box -->
+                    <div class="p-3 bg-light rounded border mb-4">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span>Security Deposit (Refundable):</span>
+                            <strong>₹1,500</strong>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span>1st Month Rental Subscription:</span>
+                            <strong>₹499</strong>
+                        </div>
+                        <hr class="my-2">
+                        <div class="d-flex justify-content-between align-items-center fw-bold text-success fs-5">
+                            <span>Total Payable Amount:</span>
+                            <span>₹1,999</span>
+                        </div>
+                    </div>
+
+                    <form id="onboardingForm">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Full Name</label>
+                            <input type="text" class="form-control" name="full_name" placeholder="Enter your complete name" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Mobile Number (WhatsApp Enabled)</label>
+                            <input type="tel" class="form-control" name="phone_number" placeholder="10-digit mobile number" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Installation Address</label>
+                            <textarea class="form-control" name="address" rows="3" placeholder="House/Flat No, Street, Landmark, City" required></textarea>
+                        </div>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-5">
+                                <label class="form-label fw-bold">KYC ID Type</label>
+                                <select class="form-select" name="kyc_type">
+                                    <option value="Aadhaar">Aadhaar Card</option>
+                                    <option value="PAN">PAN Card</option>
+                                    <option value="VoterID">Voter ID</option>
+                                </select>
+                            </div>
+                            <div class="col-md-7">
+                                <label class="form-label fw-bold">KYC Number</label>
+                                <input type="text" class="form-control" name="kyc_number" placeholder="Enter ID Number">
+                            </div>
+                        </div>
+
+                        <button type="button" class="btn btn-success w-100 py-3 fw-bold fs-5 mt-2" onclick="submitBooking()">
+                            ⚡ Pay ₹1,999 & Confirm Booking
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function submitBooking() {
+    const form = document.getElementById('onboardingForm');
+    const formData = new FormData(form);
+
+    if(!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+
+    fetch('{% url "iot_smart_rental:public_onboard_signup" %}{% if ref_code %}?ref={{ ref_code }}{% endif %}', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if(data.success) {
+            alert('🎉 ' + data.message);
+            window.location.href = data.redirect_url;
+        } else {
+            alert('❌ Booking Failed. Please try again.');
+        }
+    })
+    .catch(err => alert('An error occurred during registration.'));
+}
+</script>
+{% endblock %}

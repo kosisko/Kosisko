@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+
+{% block page_title %}Master SaaS Control Panel{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+    <!-- Master Banner -->
+    <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-8 rounded-2xl shadow-xl flex justify-between items-center border border-indigo-900/50">
+        <div>
+            <span class="bg-indigo-500/20 text-indigo-300 text-xs font-bold px-3 py-1 rounded-full border border-indigo-500/30">Super Admin Mode</span>
+            <h2 class="text-3xl font-extrabold mt-2">Kosisko SaaS Platform Overview</h2>
+            <p class="text-slate-300 text-sm mt-1">ग्लोबल क्लाइंट्स, सब-डोमेन्स और ऐप सब्सक्रिप्शन्स का मास्टर कंट्रोल सेंटर।</p>
+        </div>
+        <div class="hidden md:block text-5xl text-indigo-400">
+            <i class="fa-solid fa-crown"></i>
+        </div>
+    </div>
+
+    <!-- Stat Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="bg-white p-6 rounded-2xl border shadow-sm flex justify-between items-center">
+            <div>
+                <p class="text-xs font-bold text-gray-500 uppercase tracking-wider">Total Companies / Tenants</p>
+                <h3 class="text-3xl font-extrabold text-gray-900 mt-1">{{ total_tenants }}</h3>
+            </div>
+            <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center text-xl">
+                <i class="fa-solid fa-building"></i>
+            </div>
+        </div>
+
+        <div class="bg-white p-6 rounded-2xl border shadow-sm flex justify-between items-center">
+            <div>
+                <p class="text-xs font-bold text-gray-500 uppercase tracking-wider">App Store Modules</p>
+                <h3 class="text-3xl font-extrabold text-gray-900 mt-1">{{ total_modules }}</h3>
+            </div>
+            <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center text-xl">
+                <i class="fa-solid fa-store"></i>
+            </div>
+        </div>
+
+        <div class="bg-white p-6 rounded-2xl border shadow-sm flex justify-between items-center">
+            <div>
+                <p class="text-xs font-bold text-gray-500 uppercase tracking-wider">Active Apps Installed</p>
+                <h3 class="text-3xl font-extrabold text-gray-900 mt-1">{{ active_subscriptions }}</h3>
+            </div>
+            <div class="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center text-xl">
+                <i class="fa-solid fa-cubes"></i>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Tenants Table -->
+    <div class="bg-white rounded-2xl border shadow-sm p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="font-bold text-gray-800 text-lg flex items-center gap-2">
+                <i class="fa-solid fa-list-check text-indigo-600"></i> Recently Onboarded Clients
+            </h3>
+            <a href="/admin/tenants/tenant/" class="text-xs font-bold text-indigo-600 hover:underline">Manage All in Django Admin &rarr;</a>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-sm">
+                <thead>
+                    <tr class="border-b bg-gray-50 text-gray-500 uppercase text-xs">
+                        <th class="p-3">Company Name</th>
+                        <th class="p-3">Subdomain URL</th>
+                        <th class="p-3">Status</th>
+                        <th class="p-3">Created On</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y">
+                    {% for t in recent_tenants %}
+                        <tr class="hover:bg-gray-50">
+                            <td class="p-3 font-bold text-gray-800">{{ t.name }}</td>
+                            <td class="p-3 font-mono text-indigo-600">
+                                <a href="http://{{ t.subdomain }}.localhost:8000/" target="_blank" class="hover:underline">
+                                    {{ t.subdomain }}.localhost:8000
+                                </a>
+                            </td>
+                            <td class="p-3">
+                                {% if t.is_active %}
+                                    <span class="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-bold">Active</span>
+                                {% else %}
+                                    <span class="bg-red-100 text-red-800 text-xs px-2.5 py-1 rounded-full font-bold">Blocked</span>
+                                {% endif %}
+                            </td>
+                            <td class="p-3 text-gray-500 text-xs">{{ t.created_at|date:"M d, Y" }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="4" class="p-4 text-center text-gray-400">कोई टैनेंट दर्ज नहीं है।</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

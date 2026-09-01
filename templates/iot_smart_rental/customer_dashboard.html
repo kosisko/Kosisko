@@ -1,0 +1,281 @@
+{% extends 'base.html' %}
+
+{% block title %}Customer Dashboard - Smart IoT & Rental Engine{% endblock %}
+
+{% block content %}
+<div class="container my-4">
+    <!-- Header Section -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-1">Welcome, {{ request.user.get_full_name|default:request.user.username }} 👋</h2>
+            <p class="text-muted mb-0">Live device telemetry and control panel</p>
+        </div>
+        <span class="badge bg-primary fs-6 px-3 py-2">
+            {{ current_tenant.name|default:"Smart Rental" }}
+        </span>
+    </div>
+
+    {% if onboarding_lead %}
+    <!-- 🚚 NEW DEVICE DELIVERY LIFECYCLE TRACKER -->
+    <div class="card border-0 shadow-sm mb-4 bg-light">
+        <div class="card-body p-4">
+            <h5 class="fw-bold text-primary mb-3">🚚 Delivery & Installation Lifecycle</h5>
+            
+            <div class="row g-3 text-center mb-4">
+                <div class="col-3">
+                    <div class="p-2 rounded {% if onboarding_lead.status == 'PAYMENT_DONE' or onboarding_lead.status == 'READY_TO_DISPATCH' or onboarding_lead.status == 'OUT_FOR_DELIVERY' or onboarding_lead.status == 'INSTALLED' %}bg-success text-white{% else %}bg-secondary text-white{% endif %}">
+                        1. Payment Completed ✅
+                    </div>
+                </div>
+                <div class="col-3">
+                    <div class="p-2 rounded {% if onboarding_lead.status == 'READY_TO_DISPATCH' or onboarding_lead.status == 'OUT_FOR_DELIVERY' or onboarding_lead.status == 'INSTALLED' %}bg-success text-white{% else %}bg-secondary text-white{% endif %}">
+                        2. Ready to Dispatch 📦
+                    </div>
+                </div>
+                <div class="col-3">
+                    <div class="p-2 rounded {% if onboarding_lead.status == 'OUT_FOR_DELIVERY' or onboarding_lead.status == 'INSTALLED' %}bg-success text-white{% else %}bg-secondary text-white{% endif %}">
+                        3. Out for Delivery 🚚
+                    </div>
+                </div>
+                <div class="col-3">
+                    <div class="p-2 rounded {% if onboarding_lead.status == 'INSTALLED' %}bg-success text-white{% else %}bg-secondary text-white{% endif %}">
+                        4. Installed & Active 💧
+                    </div>
+                </div>
+            </div>
+
+            <div class="alert alert-info mb-0 d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>SLA Installation Timeframe:</strong> Within 24 to 48 Hours.
+                </div>
+                <div>
+                    <strong>Supervisor Manager:</strong> {{ onboarding_lead.supervisor_manager_name }} ({{ onboarding_lead.supervisor_manager_phone }})
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if device %}
+    <div class="row g-4">
+        <!-- 💧 LIVE TELEMETRY CARD -->
+        <div class="col-md-8">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white border-0 pt-4 px-4 d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0">💧 Live Telemetry & Status</h5>
+                    {% if device.relay_status %}
+                        <span class="badge bg-success px-3 py-2" id="relayStatusBadge">🟢 ACTIVE (Power ON)</span>
+                    {% else %}
+                        <span class="badge bg-danger px-3 py-2" id="relayStatusBadge">🔴 CUTOFF (Recharge Pending)</span>
+                    {% endif %}
+                </div>
+                <div class="card-body p-4">
+                    <div class="row g-3 text-center mb-4">
+                        <div class="col-md-4">
+                            <div class="p-3 bg-light rounded border">
+                                <span class="text-muted d-block mb-1">Device / Model</span>
+                                <strong class="fs-6">{{ device.device_name }}</strong>
+                                <small class="text-muted d-block mt-1">{{ device.model_number }}</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="p-3 bg-light rounded border">
+                                <span class="text-muted d-block mb-1">Input TDS (Raw Water)</span>
+                                <strong class="fs-4 text-warning">{{ device.input_quality_tds }} PPM</strong>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="p-3 bg-light rounded border">
+                                <span class="text-muted d-block mb-1">Output TDS (Pure Water)</span>
+                                <strong class="fs-4 text-success">{{ device.output_quality_tds }} PPM</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Filter Life Progress Bars -->
+                    <h6 class="fw-bold mb-3">🛠️ Filter Health Status</h6>
+                    
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <small class="fw-semibold">Sediment Pre-Filter</small>
+                            <small class="fw-bold text-success">{{ device.primary_filter_life }}%</small>
+                        </div>
+                        <div class="progress" style="height: 8px;">
+                            <div class="progress-bar bg-success" role="progressbar" style="width: {{ device.primary_filter_life }}%;"></div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <small class="fw-semibold">Activated Carbon Filter</small>
+                            <small class="fw-bold text-info">{{ device.secondary_filter_life }}%</small>
+                        </div>
+                        <div class="progress" style="height: 8px;">
+                            <div class="progress-bar bg-info" role="progressbar" style="width: {{ device.secondary_filter_life }}%;"></div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <small class="fw-semibold">RO Membrane Health</small>
+                            <small class="fw-bold text-primary">{{ device.core_membrane_life }}%</small>
+                        </div>
+                        <div class="progress" style="height: 8px;">
+                            <div class="progress-bar bg-primary" role="progressbar" style="width: {{ device.core_membrane_life }}%;"></div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 pt-3 border-top d-flex justify-content-between align-items-center">
+                        <span class="text-muted">Total Water Dispensed: <strong>{{ device.total_output_units }} Liters</strong></span>
+                        <a href="{% url 'iot_smart_rental:raise_service_ticket' device.id %}" class="btn btn-outline-primary btn-sm">
+                            🛠️ Raise Service Ticket
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 💳 BILLING & SUPPORT CREW -->
+        <div class="col-md-4">
+            <!-- Billing Card -->
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-body p-4">
+                    <h6 class="fw-bold text-muted mb-3">💳 Subscription & Billing</h6>
+                    <h4 class="fw-bold text-primary">{{ device.current_plan.plan_name|default:"30-Day Plan" }}</h4>
+                    
+                    <div class="my-3 p-3 bg-light rounded">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-muted">Next Due Date:</span>
+                            <strong class="text-danger" id="nextDueDateDisplay">{{ device.next_due_date|date:"d M Y" }}</strong>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span class="text-muted">Credit Balance:</span>
+                            <strong class="text-success">₹{{ device.prorated_credit_balance|default:"0.00" }}</strong>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-success w-100 py-2 fw-bold mb-2" id="rechargeBtn" onclick="triggerRecharge('{{ device.id }}')">
+                        ⚡ 1-Click UPI Recharge
+                    </button>
+                    <button class="btn btn-outline-secondary w-100 btn-sm">Switch / Upgrade Plan</button>
+                </div>
+            </div>
+
+            <!-- Support Crew Info Card -->
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-4">
+                    <h6 class="fw-bold text-muted mb-3">👷 Assigned Service Crew</h6>
+                    
+                    {% if assigned_tech %}
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="bg-primary text-white rounded-circle p-2 me-3 fs-5">👷</div>
+                        <div>
+                            <strong class="d-block">{{ assigned_tech.user.get_full_name }}</strong>
+                            <small class="text-muted">Field Technician (📱 {{ assigned_tech.phone_number }})</small>
+                            <div class="text-warning small mt-1">⭐ {{ assigned_tech.average_rating }} / 5.0</div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <p class="text-muted small">Auto-assigning nearest technician...</p>
+                    {% endif %}
+
+                    <hr>
+
+                    <div class="d-flex align-items-center">
+                        <div class="bg-dark text-white rounded-circle p-2 me-3 fs-5">👔</div>
+                        <div>
+                            <strong class="d-block">Area Supervisor / Support</strong>
+                            <small class="text-muted">📱 +91 9876543210</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📱 WHATSAPP REFERRAL & REWARD POINTS CARD -->
+    <div class="card border-0 shadow-sm mt-4 bg-success text-white">
+        <div class="card-body p-4 d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div>
+                <h4 class="fw-bold mb-1">🎉 Refer & Earn Free Recharge Credits!</h4>
+                <p class="mb-0 text-white-50">Share with friends & family. Earn wallet reward points on every successful installation.</p>
+                <div class="mt-2">
+                    <span class="badge bg-white text-success fs-6 me-2">Referral Code: {{ referral_acc.referral_code }}</span>
+                    <span class="badge bg-warning text-dark fs-6">Wallet Balance: ₹{{ referral_acc.reward_wallet_balance }}</span>
+                </div>
+            </div>
+            <div>
+                <a href="https://api.whatsapp.com/send?text=Get smart rental service installed at your home: {{ whatsapp_share_url }}" 
+                   target="_blank" 
+                   class="btn btn-light text-success fw-bold px-4 py-2 shadow-sm">
+                    📲 Share on WhatsApp
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- JavaScript for 1-Click Recharge Ajax Call -->
+<script>
+function triggerRecharge(deviceId) {
+    if (confirm('Proceed with ₹499 Subscription Recharge?')) {
+        const btn = document.getElementById('rechargeBtn');
+        btn.disabled = true;
+        btn.innerHTML = '⌛ Processing Payment...';
+
+        // Step 1: Initiate Payment Order
+        fetch("{% url 'iot_smart_rental:initiate_recharge_payment' device.id %}", {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: "payment_method=UPI"
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Server returned error ' + response.status);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                // Step 2: Verify Payment & Activate Device Relay
+                return fetch("{% url 'iot_smart_rental:verify_payment_and_activate' device.id %}", {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': '{{ csrf_token }}',
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: `gateway=${data.gateway}&transaction_id=${data.order_id}`
+                });
+            } else {
+                throw new Error(data.message || 'Payment initiation failed');
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Activation server error ' + response.status);
+            }
+            return response.json();
+        })
+        .then(verifyData => {
+            if (verifyData.success) {
+                alert('🎉 ' + verifyData.message);
+                location.reload();
+            } else {
+                alert('❌ Activation Error: ' + verifyData.message);
+                btn.disabled = false;
+                btn.innerHTML = '⚡ 1-Click UPI Recharge';
+            }
+        })
+        .catch(err => {
+            alert('❌ Recharge failed: ' + err.message);
+            btn.disabled = false;
+            btn.innerHTML = '⚡ 1-Click UPI Recharge';
+        });
+    }
+}
+</script>
+{% endblock %}

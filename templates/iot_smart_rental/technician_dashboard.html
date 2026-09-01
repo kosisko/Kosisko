@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+
+{% block title %}Technician Portal - Smart IoT & Rental Engine{% endblock %}
+
+{% block content %}
+<div class="container my-4">
+    <!-- Header & Profile Summary -->
+    <div class="card border-0 shadow-sm bg-dark text-white mb-4">
+        <div class="card-body p-4">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <div class="d-flex align-items-center">
+                    <div class="bg-primary text-white rounded-circle p-3 me-3 fs-3 fw-bold">
+                        👷
+                    </div>
+                    <div>
+                        <h3 class="fw-bold mb-1">{{ tech_profile.user.get_full_name|default:tech_profile.user.username }}</h3>
+                        <p class="text-white-50 mb-0">📱 {{ tech_profile.phone_number }} | ⭐ {{ tech_profile.average_rating }} / 5.0 Rating</p>
+                    </div>
+                </div>
+                <div class="text-end">
+                    <span class="badge bg-success fs-6 px-3 py-2 mb-1">🟢 On Duty</span>
+                    <small class="d-block text-white-50">Base Salary: ₹{{ tech_profile.base_salary }}</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Incentive & Earnings Summary -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="card border-0 shadow-sm bg-primary text-white">
+                <div class="card-body p-3 text-center">
+                    <span class="text-white-50 d-block">Total Earned Incentive</span>
+                    <h2 class="fw-bold my-1">₹{{ total_incentive }}</h2>
+                    <small>Per Repair Job: ₹{{ tech_profile.per_job_incentive }} Bonus</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card border-0 shadow-sm bg-warning text-dark">
+                <div class="card-body p-3 text-center">
+                    <span class="text-dark-50 d-block">Active Assigned Tickets</span>
+                    <h2 class="fw-bold my-1">{{ active_jobs.count }}</h2>
+                    <small>Pending Field Repair Jobs</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Assigned Repair Jobs -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-0 pt-4 px-4">
+            <h5 class="fw-bold mb-0">🛠️ Active Assigned Repair Jobs</h5>
+        </div>
+        <div class="card-body p-4">
+            {% if active_jobs %}
+                <div class="row g-3">
+                    {% for job in active_jobs %}
+                    <div class="col-12">
+                        <div class="p-3 border rounded bg-light d-flex justify-content-between align-items-center flex-wrap gap-3">
+                            <div>
+                                <div class="d-flex align-items-center gap-2 mb-1">
+                                    <span class="badge bg-danger">Ticket #{{ job.id }}</span>
+                                    <strong class="fs-6">{{ job.device.device_name }}</strong>
+                                </div>
+                                <p class="text-muted mb-1"><strong>Issue:</strong> {{ job.issue_description }}</p>
+                                <small class="text-dark d-block">📍 <strong>Customer Address:</strong> {{ job.device.customer_user.get_full_name }} ({{ job.device.customer_user.username }})</small>
+                                <small class="text-muted">Date: {{ job.created_at|date:"d M Y, h:i A" }}</small>
+                            </div>
+                            
+                            <div class="d-flex gap-2">
+                                {% if job.status == 'ASSIGNED' %}
+                                <button class="btn btn-primary btn-sm" onclick="updateStatus('{{ job.id }}', 'IN_PROGRESS')">
+                                    🚚 En Route
+                                </button>
+                                {% elif job.status == 'IN_PROGRESS' %}
+                                <button class="btn btn-success btn-sm" onclick="updateStatus('{{ job.id }}', 'COMPLETED')">
+                                    ✅ Mark Completed
+                                </button>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="text-center py-4 text-muted">
+                    <p class="mb-0">🎉 No pending repair jobs right now!</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Referral & Earnings Booster -->
+    <div class="card border-0 shadow-sm bg-success text-white mb-4">
+        <div class="card-body p-4 d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div>
+                <h5 class="fw-bold mb-1">🚀 Refer new installations & earn extra commissions!</h5>
+                <p class="mb-0 text-white-50">Earn ₹{{ tech_profile.referral_commission_rate }} bonus directly added to your salary on every successful referral.</p>
+            </div>
+            <div>
+                <a href="https://api.whatsapp.com/send?text=Click to install smart rental machine: {{ tech_whatsapp_url }}" 
+                   target="_blank" 
+                   class="btn btn-light text-success fw-bold px-4 py-2 shadow-sm">
+                   📲 Share Referral Link
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Completed Jobs History -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-0 pt-4 px-4">
+            <h5 class="fw-bold mb-0">✅ Completed Jobs History</h5>
+        </div>
+        <div class="card-body p-4">
+            {% if completed_jobs %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Ticket ID</th>
+                                <th>Device</th>
+                                <th>Completed At</th>
+                                <th>Rating</th>
+                                <th>Incentive Earned</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for job in completed_jobs %}
+                            <tr>
+                                <td>#{{ job.id }}</td>
+                                <td>{{ job.device.device_name }}</td>
+                                <td>{{ job.completed_at|date:"d M Y, h:i A" }}</td>
+                                <td>
+                                    {% if job.customer_rating %}
+                                        <span class="text-warning">⭐ {{ job.customer_rating }} / 5</span>
+                                    {% else %}
+                                        <span class="text-muted">Pending</span>
+                                    {% endif %}
+                                </td>
+                                <td><strong class="text-success">+₹{{ job.incentive_earned }}</strong></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-muted text-center my-3">No completed job history available yet.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+function updateStatus(ticketId, status) {
+    if(confirm('Are you sure you want to update job status?')) {
+        fetch(`/iot/technician/update-job/${ticketId}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: `status=${status}`
+        })
+        .then(response => response.json())
+        .then(data => {
+            if(data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert('Error updating status.');
+            }
+        });
+    }
+}
+</script>
+{% endblock %}

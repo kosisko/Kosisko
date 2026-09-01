@@ -1,0 +1,199 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin Control Panel - Smart IoT & Rental Engine{% endblock %}
+
+{% block content %}
+<div class="container-fluid my-4 px-4">
+    <!-- Header Section -->
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+        <div>
+            <h2 class="fw-bold mb-1">⚙️ Central Command Control Panel</h2>
+            <p class="text-muted mb-0">Real-time device telemetry, remote cutoff override, and field force dispatch desk</p>
+        </div>
+        <div class="d-flex gap-2">
+            <span class="badge bg-dark fs-6 px-3 py-2">Tenant: {{ current_tenant.name|default:"Super Admin View" }}</span>
+        </div>
+    </div>
+
+    <!-- Quick Stats Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm bg-primary text-white">
+                <div class="card-body p-3 text-center">
+                    <span class="text-white-50 d-block">Total Smart Devices</span>
+                    <h2 class="fw-bold my-1">{{ devices.count }}</h2>
+                    <small>Registered Network Devices</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm bg-success text-white">
+                <div class="card-body p-3 text-center">
+                    <span class="text-white-50 d-block">Active Devices</span>
+                    <h2 class="fw-bold my-1">{{ devices.count }}</h2>
+                    <small>Relay ON / Operational</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm bg-danger text-white">
+                <div class="card-body p-3 text-center">
+                    <span class="text-white-50 d-block">Cutoff / Expired</span>
+                    <h2 class="fw-bold my-1">0</h2>
+                    <small>Recharge Pending / Cutoff</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm bg-dark text-white">
+                <div class="card-body p-3 text-center">
+                    <span class="text-white-50 d-block">Active Technicians</span>
+                    <h2 class="fw-bold my-1">{{ technicians.count }}</h2>
+                    <small>On-Field Service Staff</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content Panels -->
+    <div class="row g-4">
+        <!-- 📡 SMART IOT DEVICES MONITORING -->
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0 pt-4 px-4 d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0">📡 Live Device Telemetry & Remote Switch</h5>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="location.reload()">🔄 Refresh</button>
+                </div>
+                <div class="card-body p-4">
+                    {% if devices %}
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Device Name / ID</th>
+                                    <th>Customer</th>
+                                    <th>TDS (In/Out)</th>
+                                    <th>Next Due Date</th>
+                                    <th>Status</th>
+                                    <th>Remote Switch</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for dev in devices %}
+                                <tr>
+                                    <td>
+                                        <strong class="d-block">{{ dev.device_name }}</strong>
+                                        <small class="text-muted">{{ dev.tuya_device_id }}</small>
+                                    </td>
+                                    <td>
+                                        <span>{{ dev.customer_user.get_full_name|default:dev.customer_user.username }}</span>
+                                    </td>
+                                    <td>
+                                        <small class="text-warning d-block">In: {{ dev.input_quality_tds }} PPM</small>
+                                        <small class="text-success fw-bold">Out: {{ dev.output_quality_tds }} PPM</small>
+                                    </td>
+                                    <td>
+                                        <span>{{ dev.next_due_date|date:"d M Y" }}</span>
+                                    </td>
+                                    <td>
+                                        {% if dev.relay_status %}
+                                            <span class="badge bg-success">🟢 ACTIVE</span>
+                                        {% else %}
+                                            <span class="badge bg-danger">🔴 CUTOFF</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm {% if dev.relay_status %}btn-outline-danger{% else %}btn-outline-success{% endif %}" 
+                                                onclick="toggleRelay('{{ dev.id }}')">
+                                            {% if dev.relay_status %}🔒 Apply Cutoff{% else %}⚡ Remote ON{% endif %}
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-center text-muted my-4">No devices registered in the network.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- 👷 TECHNICIANS & TICKETS PANEL -->
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-0 pt-4 px-4">
+                    <h5 class="fw-bold mb-0">👷 On-Field Technicians</h5>
+                </div>
+                <div class="card-body p-4">
+                    {% if technicians %}
+                        <div class="list-group list-group-flush">
+                            {% for tech in technicians %}
+                            <div class="list-group-item border-0 px-0 d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong class="d-block">{{ tech.user.get_full_name|default:tech.user.username }}</strong>
+                                    <small class="text-muted">📱 {{ tech.phone_number }} | ⭐ {{ tech.average_rating }}</small>
+                                </div>
+                                <span class="badge {% if tech.is_on_leave %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                                    {% if tech.is_on_leave %}On Leave{% else %}On Duty{% endif %}
+                                </span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-muted small mb-0">No technician profiles found.</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0 pt-4 px-4">
+                    <h5 class="fw-bold mb-0">🎟️ Recent Service Tickets</h5>
+                </div>
+                <div class="card-body p-4">
+                    {% if tickets %}
+                        <div class="list-group list-group-flush">
+                            {% for ticket in tickets %}
+                            <div class="list-group-item border-0 px-0 mb-2 bg-light p-3 rounded">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <small class="fw-bold text-primary">#{{ ticket.id }} - {{ ticket.device.device_name }}</small>
+                                    <span class="badge bg-secondary">{{ ticket.status }}</span>
+                                </div>
+                                <p class="small text-muted mb-1">{{ ticket.issue_description }}</p>
+                                <small class="text-dark d-block">Assigned: {{ ticket.technician.user.get_full_name|default:"Unassigned" }}</small>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-muted small mb-0">No open service tickets.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleRelay(deviceId) {
+    if(confirm('Are you sure you want to toggle remote relay power status?')) {
+        fetch(`/iot/admin/toggle-relay/${deviceId}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if(data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert('Error toggling relay switch.');
+            }
+        });
+    }
+}
+</script>
+{% endblock %}
