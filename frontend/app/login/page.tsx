@@ -214,7 +214,7 @@ function AuthContent() {
     setSuccessMessage('');
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/v1/auth/check-user/', {
+      const response = await fetch('/api/v1/auth/check-user/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier: identifier.trim(), email: identifier.trim() }),
@@ -227,7 +227,7 @@ function AuthContent() {
           setStep('login-password');
         } else {
           if (identifier.includes('@')) {
-            const otpRes = await fetch('http://127.0.0.1:8000/api/v1/auth/send-otp/', {
+            const otpRes = await fetch('/api/v1/auth/send-otp/', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ email: identifier.trim() }),
@@ -279,7 +279,7 @@ function AuthContent() {
     setErrorMessage('');
     setSuccessMessage('');
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/v1/auth/send-otp/', {
+      const res = await fetch('/api/v1/auth/send-otp/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: identifier.trim() }),
@@ -308,7 +308,7 @@ function AuthContent() {
     setSuccessMessage('');
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/v1/auth/verify-otp/', {
+      const res = await fetch('/api/v1/auth/verify-otp/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: identifier.trim(), otp: finalOtp }),
@@ -367,8 +367,8 @@ function AuthContent() {
     try {
       const isLogin = step === 'login-password';
       const endpoint = isLogin 
-        ? 'http://127.0.0.1:8000/api/v1/auth/login/' 
-        : 'http://127.0.0.1:8000/api/v1/auth/signup/';
+        ? '/api/v1/auth/login/' 
+        : '/api/v1/auth/signup/';
 
       const payload = isLogin
         ? { identifier: identifier.trim(), password: password }
@@ -425,7 +425,7 @@ function AuthContent() {
     setStep('login-password');
     setErrorMessage('');
 
-    fetch('http://127.0.0.1:8000/api/v1/auth/forgot-password/', {
+    fetch('/api/v1/auth/forgot-password/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier: identifier.trim(), email: identifier.trim() }),
