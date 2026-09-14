@@ -84,7 +84,7 @@ export default function AdminDashboardPage() {
                 <span>👥 Manage Enterprise Tenants</span>
                 <span>→</span>
               </a>
-              <a href="http://127.0.0.1:8000/admin/" target="_blank" rel="noopener noreferrer" className="w-full py-3 px-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-amber-400 flex items-center justify-between transition-all">
+              <a href="/admin/" target="_blank" rel="noopener noreferrer" className="w-full py-3 px-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-amber-400 flex items-center justify-between transition-all">
                 <span>🔧 Open Raw Django DB Admin</span>
                 <span>↗</span>
               </a>

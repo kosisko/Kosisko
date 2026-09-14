@@ -1,25 +1,39 @@
-from .models import Tenant
+from django.http import Http404
+from tenants.models import Tenant  # 👈 केवल 'tenants' ऐप के Tenant मॉडल का उपयोग करें
 
-class TenantMiddleware:
-    """
-    यह Middleware HTTP Request के Host URL (उदा. tata.localhost) से सब-डोमेन 
-    एक्सट्रैक्ट करके सही Tenant को request.tenant में अटैच करता है।
-    """
+class GlobalTenantMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        host = request.get_host().split(':')[0]  # पोर्ट नंबर (उदा. :8000) हटाएं
+        host = request.get_host().split(':')[0]
         parts = host.split('.')
+        
         request.tenant = None
+        request.is_god_mode = False
 
-        # अगर सब-डोमेन मौजूद है (जैसे tata.localhost या tata.kosisko.com)
-        if len(parts) > 1 and parts[0] not in ['www', 'localhost', '127']:
+        # 1. Check Super Admin God-Mode
+        if hasattr(request, 'user') and request.user.is_authenticated and request.user.is_superuser:
+            request.is_god_mode = True
+            impersonate_sub = request.GET.get('impersonate')
+            if impersonate_sub:
+                try:
+                    request.tenant = Tenant.objects.get(subdomain=impersonate_sub)
+                except Tenant.DoesNotExist:
+                    pass
+
+        # 2. Localhost / 127.0.0.1 Fallback for Development
+        if not request.tenant and host in ['127.0.0.1', 'localhost']:
+            request.tenant = Tenant.objects.first()
+
+        # 3. Subdomain Resolution (e.g., tata.localhost or client.domain.com)
+        if not request.tenant and len(parts) >= 3:
             subdomain = parts[0]
-            try:
-                request.tenant = Tenant.objects.get(subdomain=subdomain, is_active=True)
-            except Tenant.DoesNotExist:
-                request.tenant = None
+            if subdomain not in ['www', 'admin', 'api']:
+                try:
+                    request.tenant = Tenant.objects.get(subdomain=subdomain)
+                except Tenant.DoesNotExist:
+                    raise Http404("Tenant domain not found or inactive.")
 
         response = self.get_response(request)
         return response

@@ -50,7 +50,7 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
   // 🚪 सुपर-पावरफुल लॉगआउट फंक्शन
   const handleLogout = async () => {
     try {
-      await fetch('http://127.0.0.1:8000/api/v1/auth/logout/', {
+      await fetch('/api/v1/auth/logout/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });

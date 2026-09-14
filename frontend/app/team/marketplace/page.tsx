@@ -38,7 +38,7 @@ export default function TeamMarketplacePage() {
 
   // 🔄 Django API से डेटा लोड करने के लिए useEffect
   useEffect(() => {
-    fetch('http://127.0.0.1:8000/api/v1/marketplace/')
+    fetch('/api/v1/marketplace/')
       .then((res) => {
         if (!res.ok) throw new Error("API not available");
         return res.json();
@@ -58,7 +58,7 @@ export default function TeamMarketplacePage() {
     setLoadingAppId(id);
     
     // भविष्य के लिए Django API कॉल:
-    // await fetch('http://127.0.0.1:8000/api/v1/marketplace/toggle/', { 
+    // await fetch('/api/v1/marketplace/toggle/', { 
     //   method: 'POST', 
     //   headers: { 'Content-Type': 'application/json' },
     //   body: JSON.stringify({ id, action: !currentStatus }) 

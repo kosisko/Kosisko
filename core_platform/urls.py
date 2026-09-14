@@ -24,7 +24,7 @@ urlpatterns = [
     path('api/v1/auth/forgot-password/', UniversalForgotPasswordAPIView.as_view(), name='universal_forgot_password'),
     path('api/v1/auth/reset-password/', ResetPasswordAPIView.as_view(), name='reset_password'),
 
-    # 💰 कूपन और कस्टम प्राइसिंग कैलकुलेशन एपीआई
+   # 💰 कूपन और कस्टम प्राइसिंग कैलकुलेशन एपीआई
     path('api/v1/calculate-price/', calculate_app_price, name='calculate_app_price'),
     
     # 📊 डैशबोर्ड बूटस्ट्रैप और ऐप्स लोड करने के लिए एपीआई

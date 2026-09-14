@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+export const dynamic = 'force-dynamic';
+
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { MASTER_BRAND } from '../../utils/brand';
 
-export default function ResetPasswordPage() {
+function InnerResetContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const username = searchParams.get('user') || '';
@@ -49,7 +51,7 @@ export default function ResetPasswordPage() {
     setMessage('');
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/v1/auth/reset-password/', {
+      const response = await fetch('/api/v1/auth/reset-password/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: username, password: newPassword }),
@@ -89,7 +91,7 @@ export default function ResetPasswordPage() {
       {/* मुख्य सुपर-प्रीमियम ग्लास कार्ड */}
       <div className="w-full max-w-md bg-white/95 border border-slate-300/80 p-8 rounded-[40px] backdrop-blur-3xl shadow-[0_25px_80px_rgba(0,0,0,0.08),_0_0_40px_rgba(245,158,11,0.1)] relative z-10">
 
-        {/* 🌟 प्योर व्हाइट लोगो बॉक्स (माउस ले जाते ही स्मूथ ज़ूम इफ़ेक्ट) */}
+        {/* 🌟 प्योर व्हाइट लोगो बॉक्स (माउस ले जाते ही स्मूथ ज़ूम इफ़ेक्ट) */}
         <div className="text-center mb-6 flex flex-col items-center justify-center relative z-10">
           <div className="absolute w-52 h-20 bg-gradient-to-r from-amber-400/25 via-yellow-300/35 to-amber-400/25 rounded-full blur-2xl pointer-events-none animate-pulse"></div>
           
@@ -176,5 +178,13 @@ export default function ResetPasswordPage() {
 
       </div>
     </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-700 text-sm font-semibold">Loading reset portal...</div>}>
+      <InnerResetContent />
+    </Suspense>
   );
 }

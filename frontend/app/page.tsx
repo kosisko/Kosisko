@@ -31,7 +31,7 @@ export default function HomeCommandCenter() {
   const handleSelectModule = (moduleCode: string) => {
     setActiveActionFeedback(`Launching module: ${moduleCode}...`);
     setIsCommandOpen(false);
-    
+
     setTimeout(() => {
       router.push(`/dashboard?module=${moduleCode}`);
     }, 400);
@@ -52,8 +52,8 @@ export default function HomeCommandCenter() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-6 selection:bg-cyan-500 selection:text-slate-950">
-      
-      {/* 🌟 Top Navigation Header (बिना फालतू लॉगआउट बटन के, एकदम साफ़) */}
+
+      {/* 🌟 Top Navigation Header */}
       <header className="flex justify-between items-center w-full border-b border-white/10 pb-4">
         <div className="flex items-center gap-3">
           <div className="w-3 h-3 rounded-full bg-cyan-400 animate-ping"></div>
@@ -123,27 +123,31 @@ export default function HomeCommandCenter() {
         </div>
       </main>
 
-      {/* 🌟 Bottom Status Bar */}
-      <footer className="w-full flex justify-between items-center border-t border-white/10 pt-4 text-xs text-slate-500">
+      {/* 🌟 Bottom Status Bar & Copyright + Privacy Policy Footer */}
+      <footer className="w-full flex flex-col sm:flex-row justify-between items-center border-t border-white/10 pt-4 text-xs text-slate-500 gap-2">
         <div>
           System Status: <span className="text-emerald-400 font-bold">{systemStatus}</span>
         </div>
-        <div>
-          Multi-Tenant Spatial Enterprise OS v1.0
+        <div className="flex items-center gap-2">
+          <span>&copy; 2026 Kosisko. All Rights Reserved.</span>
+          <span>&bull;</span>
+          <a href="/privacy-policy" className="text-cyan-400 hover:underline font-semibold">
+            Privacy Policy
+          </a>
         </div>
       </footer>
 
       {/* Command Palette & Customizer Modals */}
-      <CommandPalette 
-        isOpen={isCommandOpen} 
-        onClose={() => setIsCommandOpen(false)} 
-        onSelectModule={handleSelectModule} 
-        onRunCommand={handleRunCommand} 
+      <CommandPalette
+        isOpen={isCommandOpen}
+        onClose={() => setIsCommandOpen(false)}
+        onSelectModule={handleSelectModule}
+        onRunCommand={handleRunCommand}
       />
-      
-      <CustomizerPanel 
-        isOpen={isCustomizerOpen} 
-        onClose={() => setIsCustomizerOpen(false)} 
+
+      <CustomizerPanel
+        isOpen={isCustomizerOpen}
+        onClose={() => setIsCustomizerOpen(false)}
       />
 
     </div>

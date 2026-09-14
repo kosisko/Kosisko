@@ -206,7 +206,7 @@ export default function MasterEnterpriseDashboard() {
     };
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/ai-intent/', {
+      const response = await fetch('/api/v1/ai-intent/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -279,7 +279,7 @@ export default function MasterEnterpriseDashboard() {
   };
   
   useEffect(() => {
-    fetch('http://localhost:8000/api/v1/bootstrap/')
+    fetch('/api/v1/bootstrap/')
       .then((res) => {
         if (!res.ok) throw new Error("API not reachable");
         return res.json();

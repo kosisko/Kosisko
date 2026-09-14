@@ -757,3 +757,155 @@ class ResetPasswordAPIView(APIView):
         user.save()
 
         return Response({"status": "success", "message": "Password reset successfully."})
+
+
+# =============================================================================
+# 🌟 UNIFIED GOOGLE & HARDWARE PASSKEY SMART ONBOARDING API VIEWS
+# =============================================================================
+
+class GoogleOAuthOnboardingView(APIView):
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        """
+        Google लॉगिन/साइन-अप को हैंडल करता है।
+        अगर यूजर नया है, तो Google डेटा के साथ ऑनबोर्डिंग (Organization Name, Unique Username, Mobile) मांगता है।
+        अगर पुराना है, तो सीधे सक्सेसफुल लॉगिन टोकन/डेटा देता है।
+        """
+        try:
+            data = request.data
+            email = data.get('email')
+            first_name = data.get('first_name', '')
+            last_name = data.get('last_name', '')
+            
+            if not email:
+                return Response({"error": "Email is required from Google Auth."}, status=400)
+                
+            user = User.objects.filter(email__iexact=email).first()
+            
+            if user:
+                # 🟢 Existing User -> Direct Login
+                profile = getattr(user, 'profile', None)
+                is_completed = profile.is_profile_completed if profile else True
+                role = profile.role if profile else 'customer'
+                
+                return Response({
+                    "status": "success",
+                    "action": "login",
+                    "message": "Login successful via Google",
+                    "username": user.username,
+                    "email": user.email,
+                    "role": role,
+                    "is_profile_completed": is_completed
+                })
+            else:
+                # 🟡 New User -> Require Onboarding (Organization Name, Unique Username, Mobile)
+                return Response({
+                    "status": "success",
+                    "action": "onboarding_required",
+                    "message": "New user detected. Please complete your registration details.",
+                    "prefilled_data": {
+                        "email": email,
+                        "first_name": first_name,
+                        "last_name": last_name
+                    }
+                })
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
+
+class CompleteGoogleSignupView(APIView):
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        """
+        Google से आए नए यूजर द्वारा Organization Name, Unique Username और Mobile भरने के बाद अकाउंट क्रिएट करता है।
+        """
+        try:
+            data = request.data
+            email = data.get('email')
+            first_name = data.get('first_name', '')
+            last_name = data.get('last_name', '')
+            username = data.get('username') # Unique Username
+            organization_name = data.get('organization_name') # Unified term (instead of firm name)
+            mobile_number = data.get('mobile_number', '')
+            
+            if not email or not username or not organization_name:
+                return Response({"error": "Email, Unique Username, and Organization Name are mandatory."}, status=400)
+                
+            # Check for unique username and email availability
+            if User.objects.filter(Q(username__iexact=username) | Q(email__iexact=email)).exists():
+                return Response({"error": "Username or Email is already taken. Please choose a unique username."}, status=400)
+                
+            # Random secure password for OAuth users (they login via Google anyway)
+            temp_password = secrets.token_urlsafe(16)
+            
+            user = User.objects.create_user(
+                username=username, 
+                email=email, 
+                password=temp_password, 
+                first_name=first_name,
+                last_name=last_name
+            )
+            
+            UserProfile.objects.update_or_create(
+                user=user,
+                defaults={
+                    'role': 'customer',
+                    'organization_name': organization_name,
+                    'mobile_number': mobile_number,
+                    'is_mobile_verified': True,
+                    'is_profile_completed': True
+                }
+            )
+            
+            # Send professional welcome email
+            send_professional_welcome_email(user, organization_name)
+            
+            return Response({
+                "status": "success",
+                "message": "Account successfully created via Google!",
+                "username": user.username,
+                "role": "customer"
+            })
+            
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
+
+class HardwarePasskeyAuthView(APIView):
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        """
+        Hardware Passkey / Biometric लॉगिन और साइन-अप को मैनेज करता है।
+        अगर पासकी रजिस्टर नहीं है या यूजर नया है, तो उसे ऑनबोर्डिंग पर भेजता है।
+        """
+        try:
+            data = request.data
+            identifier = data.get('identifier') # Unique Username or Email
+            passkey_credential_id = data.get('credential_id')
+            
+            if not identifier:
+                return Response({"error": "Unique Username or Email is required for Passkey authentication."}, status=400)
+                
+            user = User.objects.filter(Q(username__iexact=identifier) | Q(email__iexact=identifier)).first()
+            
+            if user:
+                # Existing User login via Passkey
+                return Response({
+                    "status": "success",
+                    "action": "login",
+                    "message": "Passkey verified successfully.",
+                    "username": user.username
+                })
+            else:
+                # New User wanting to register via Passkey
+                return Response({
+                    "status": "success",
+                    "action": "onboarding_required",
+                    "message": "New passkey user. Please provide your Organization Name and details to complete registration.",
+                    "identifier": identifier
+                })
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
