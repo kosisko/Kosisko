@@ -4,11 +4,7 @@ import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { MASTER_BRAND } from '../../utils/brand';
 
-function AuthContentWrapper() {
-  return <UltimateHybridAuthPageContent />;
-}
-
-function UltimateHybridAuthPageContent() {
+function AuthContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
@@ -33,7 +29,7 @@ function UltimateHybridAuthPageContent() {
   
   const [greeting, setGreeting] = useState('Good Morning');
 
-  // 🌟 मैजिक लिंक से आने वाले ईमेल और ओटीपी को ऑटो-वेरीफाई करने के लिए इफ़ेक्ट
+  // 🌟 मैजिक लिंक से आने वाले ईमेल और ओटीपी को ऑटो-वेरीफाई करने के लिए नया इफ़ेक्ट
   useEffect(() => {
     const emailParam = searchParams.get("email");
     const otpParam = searchParams.get("otp");
@@ -42,6 +38,7 @@ function UltimateHybridAuthPageContent() {
     if (emailParam && otpParam && autoVerifyParam === "true") {
       setIdentifier(emailParam);
       setSuccessMessage('Email verified successfully via Link!');
+      // सीधे अगले स्टेप (org-name) पर भेजें
       setStep('org-name');
     }
   }, [searchParams]);
@@ -114,27 +111,21 @@ function UltimateHybridAuthPageContent() {
     return () => clearInterval(timer);
   }, [step, resendTimer]);
 
-  // 🌟 स्मार्ट Google Sign-In Flow (बैकएंड ऑनबोर्डिंग इंटीग्रेशन के साथ)
-  const handleGoogleSignIn = async () => {
+  const handleGoogleSignIn = () => {
     setLoading(true);
     setErrorMessage('');
 
-    try {
-      // वैकल्पिक: पहले गूगल ऑथ एपीआई को कॉल करके चेक करें कि यूजर नया है या पुराना
-      // यहाँ हम सीधे स्मार्ट ऑनबोर्डिंग स्टेप (org-name) पर भेज रहे हैं या डायरेक्ट रीडायरेक्ट कर रहे हैं
-      const clientId = '297158802396-jhqr40pv045bivtmuui4qdkgvdl9081b.apps.googleusercontent.com';
-      const redirectUri = window.location.origin + '/customer/marketplace';
-      const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=email profile`;
-      
-      // आप चाहें तो इसे रीडायरेक्ट कर सकते हैं या नया यूजर मानकर org-name पर ला सकते हैं:
-      window.location.href = googleAuthUrl;
-    } catch (err) {
-      setLoading(false);
-      setErrorMessage('Google authentication failed.');
-    }
+    // 🌟 1. रीडायरेक्ट होने से पहले ही लोकल स्टोरेज में सेशन टोकन और फ्लैग सेट कर दें
+    localStorage.setItem('authToken', 'google_session_token_' + Date.now());
+    sessionStorage.removeItem('kosisko_logout_active');
+    document.cookie = "kosisko_logged_in=true; path=/; max-age=86400; SameSite=Lax";
+
+    const clientId = '297158802396-jhqr40pv045bivtmuui4qdkgvdl9081b.apps.googleusercontent.com';
+    const redirectUri = window.location.origin + '/customer/marketplace';
+    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=email profile`;
+    window.location.href = googleAuthUrl;
   };
 
-  // 🌟 स्मार्ट Hardware Passkey Flow (बैकएंड इंटीग्रेशन के साथ)
   const handlePasskeyLogin = async () => {
     setLoading(true);
     setErrorMessage('');
@@ -155,6 +146,7 @@ function UltimateHybridAuthPageContent() {
         // @ts-ignore
         await navigator.credentials.get({ publicKey: publicKeyCredentialRequestOptions });
 
+        // 🌟 पासकी सक्सेसफुल होने पर तुरंत टोकन और फ्लैग सेट करें
         localStorage.setItem('authToken', 'passkey_session_token_' + Date.now());
         sessionStorage.removeItem('kosisko_logout_active');
         document.cookie = "kosisko_logged_in=true; path=/; max-age=86400; SameSite=Lax";
@@ -191,6 +183,7 @@ function UltimateHybridAuthPageContent() {
       });
 
       if (newCredential) {
+        // 🌟 नया पासकी रजिस्टर होने पर भी टोकन सेट करें
         localStorage.setItem('authToken', 'passkey_session_token_' + Date.now());
         sessionStorage.removeItem('kosisko_logout_active');
 
@@ -206,7 +199,7 @@ function UltimateHybridAuthPageContent() {
 
     } catch (err) {
       setLoading(false);
-      setErrorMessage('Biometric/Passkey setup failed.');
+      setErrorMessage('Biometric/Passkey setup failed. Ensure site is on HTTPS or use Google/Password login.');
     }
   };
 
@@ -337,8 +330,8 @@ function UltimateHybridAuthPageContent() {
 
   const handleOrgSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim() || !organizationName.trim()) {
-      setErrorMessage('Please enter both Unique Username and Organization Name.');
+    if (!organizationName.trim()) {
+      setErrorMessage('Please enter your organization name.');
       return;
     }
     setErrorMessage('');
@@ -381,10 +374,11 @@ function UltimateHybridAuthPageContent() {
         ? { identifier: identifier.trim(), password: password }
         : { 
             email: identifier.includes('@') ? identifier.trim() : '', 
-            username: username.trim(), 
+            username: username.trim() || identifier.trim(), 
             password: password, 
-            organizationName: organizationName.trim(), 
-            mobileNumber: mobileNumber.trim() 
+            fullName: organizationName, 
+            organizationName: organizationName, 
+            mobileNumber: mobileNumber 
           };
 
       const response = await fetch(endpoint, {
@@ -404,7 +398,9 @@ function UltimateHybridAuthPageContent() {
           localStorage.setItem('authToken', 'active_session_token_' + Date.now());
         }
 
+        // 🌟 कुकी सेट करना
         document.cookie = "kosisko_logged_in=true; path=/; max-age=86400; SameSite=Lax";
+
         sessionStorage.removeItem('kosisko_logout_active');
         
         window.location.href = '/customer/marketplace';
@@ -442,6 +438,8 @@ function UltimateHybridAuthPageContent() {
     <div 
       className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-50 via-slate-50 to-indigo-50 text-slate-900 flex items-center justify-center p-4 relative overflow-hidden font-sans"
     >
+      
+      {/* पूरे पेज पर मक्खन की तरह घूमने वाला लाइव माउस स्पॉटलाइट इफ़ेक्ट */}
       <div 
         className="absolute pointer-events-none inset-0 transition-opacity duration-300 z-0"
         style={{
@@ -449,13 +447,17 @@ function UltimateHybridAuthPageContent() {
         }}
       ></div>
 
+      {/* अत्यंत सूक्ष्म और आधुनिक डॉट ग्रिड पैटर्न */}
       <div className="absolute inset-0 bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:28px_28px] opacity-40 pointer-events-none"></div>
 
+      {/* जीवंत एम्बिएंट फ्लैशिंग ओर्ब्स */}
       <div className="absolute top-1/4 left-1/4 w-[700px] h-[700px] bg-amber-400/30 rounded-full blur-[190px] pointer-events-none animate-pulse"></div>
       <div className="absolute bottom-1/4 right-1/4 w-[700px] h-[700px] bg-indigo-400/25 rounded-full blur-[200px] pointer-events-none animate-pulse duration-1000"></div>
 
+      {/* मुख्य सुपर-प्रीमियम ग्लास कार्ड */}
       <div className="w-full max-w-md bg-white/95 border border-slate-300/80 p-8 rounded-[40px] backdrop-blur-3xl shadow-[0_25px_80px_rgba(0,0,0,0.08),_0_0_40px_rgba(245,158,11,0.1)] relative z-10">
 
+        {/* टॉप ग्रीटिंग और सिक्योर पोर्टल स्टेटस */}
         <div className="flex items-center justify-between mb-6 relative z-10">
           <span className="text-[10px] tracking-widest text-amber-900 font-extrabold uppercase bg-amber-100 py-1.5 px-3.5 rounded-full border border-amber-300 shadow-sm">
             ✨ {greeting}
@@ -467,6 +469,7 @@ function UltimateHybridAuthPageContent() {
           </div>
         </div>
 
+        {/* 🌟 प्योर व्हाइट लोगो बॉक्स (माउस ले जाते ही स्मूथ ज़ूम इफ़ेक्ट) */}
         <div className="text-center mb-6 flex flex-col items-center justify-center relative z-10">
           <div className="absolute w-52 h-20 bg-gradient-to-r from-amber-400/25 via-yellow-300/35 to-amber-400/25 rounded-full blur-2xl pointer-events-none animate-pulse"></div>
           
@@ -491,6 +494,7 @@ function UltimateHybridAuthPageContent() {
           </div>
         )}
 
+        {/* सेंट्रलाइज्ड शॉर्टकट बटन्स (क्लिक फीडबैक के साथ) */}
         {step === 'universal-input' && (
           <div className="space-y-3.5 mb-6 animate-fadeIn relative z-10">
             <button
@@ -520,6 +524,7 @@ function UltimateHybridAuthPageContent() {
           </div>
         )}
 
+        {/* स्टेप 1: यूनिवर्सल इनपुट */}
         {step === 'universal-input' && (
           <form onSubmit={handleUniversalSubmit} className="space-y-4 animate-fadeIn relative z-10">
             <div>
@@ -546,6 +551,7 @@ function UltimateHybridAuthPageContent() {
           </form>
         )}
 
+        {/* स्टेप 2: ईमेल OTP */}
         {step === 'email-otp' && (
           <form onSubmit={handleVerifyEmailOtp} className="space-y-4 animate-fadeIn relative z-10">
             <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 text-center mb-2">
@@ -584,7 +590,7 @@ function UltimateHybridAuthPageContent() {
           </form>
         )}
 
-        {/* यूनिक यूजरनेम और ऑर्गनाइजेशन नेम सेटअप */}
+        {/* ऑर्गनाइजेशन नेम और यूजरनेम सेटअप */}
         {step === 'org-name' && (
           <form onSubmit={handleOrgSubmit} className="space-y-4 animate-fadeIn relative z-10">
             <div>
@@ -618,6 +624,7 @@ function UltimateHybridAuthPageContent() {
           </form>
         )}
 
+        {/* मोबाइल नंबर */}
         {step === 'mobile-input' && (
           <form onSubmit={handleMobileSubmit} className="space-y-4 animate-fadeIn relative z-10">
             <div>
@@ -639,6 +646,7 @@ function UltimateHybridAuthPageContent() {
           </form>
         )}
 
+        {/* व्हाट्सएप वेरिफिकेशन */}
         {step === 'whatsapp-verify' && (
           <div className="space-y-4 text-center animate-fadeIn relative z-10">
             <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200">
@@ -669,6 +677,7 @@ function UltimateHybridAuthPageContent() {
           </div>
         )}
 
+        {/* पासवर्ड सेटअप */}
         {step === 'password-setup' && (
           <form onSubmit={handleFinalSubmit} className="space-y-4 animate-fadeIn relative z-10">
             <div>
@@ -693,6 +702,7 @@ function UltimateHybridAuthPageContent() {
                 </button>
               </div>
 
+              {/* लाइव पासवर्ड स्ट्रेंथ मीटर बार */}
               {password && (
                 <div className="mt-2 space-y-1">
                   <div className="flex justify-between items-center text-[9px]">
@@ -723,6 +733,7 @@ function UltimateHybridAuthPageContent() {
           </form>
         )}
 
+        {/* लॉगिन पासवर्ड */}
         {step === 'login-password' && (
           <form onSubmit={handleFinalSubmit} className="space-y-4 animate-fadeIn relative z-10">
             <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-between mb-2">
@@ -767,6 +778,7 @@ function UltimateHybridAuthPageContent() {
           </form>
         )}
 
+        {/* फॉरगेट पासवर्ड स्क्रीन */}
         {step === 'forgot' && (
           <form onSubmit={handleForgotPassword} className="space-y-4 animate-fadeIn relative z-10">
             <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 mb-2">
@@ -792,6 +804,7 @@ function UltimateHybridAuthPageContent() {
           </form>
         )}
 
+        {/* लीगल-सेफ और 256-बिट एनक्रिप्टेड फुटर बैज */}
         <div className="mt-8 text-center border-t border-slate-200 pt-4 flex flex-col items-center justify-center gap-2 relative z-10">
           <div className="flex items-center gap-1.5 text-[9px] text-emerald-700 font-bold bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 shadow-sm">
             <span>🔒</span>
@@ -805,10 +818,11 @@ function UltimateHybridAuthPageContent() {
   );
 }
 
-export default function UltimateHybridAuthPage() {
+// 🌟 यह मुख्य पेज एक्सपोर्ट कॉम्पोनेन्ट है जो Suspense बाउंड्री के साथ एरर को पूरी तरह हल कर देता है
+export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-amber-500 font-bold text-xs">Loading Secure Portal...</div>}>
-      <AuthContentWrapper />
+    <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center text-xs font-bold text-slate-500">Loading Secure Portal...</div>}>
+      <AuthContent />
     </Suspense>
   );
 }
