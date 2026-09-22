@@ -12,7 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'django-insecure-4aq5%q_%ayxyesqop*#3%5t*y=)p*y1eti%(_!%*t4)p1q9u1-'
 
-DEBUG = False
+DEBUG = True
 
 # सब-डोमेन परीक्षण (e.g. tata.localhost) और भविष्य के डोमेन के लिए
 ALLOWED_HOSTS = ['kosisko.com', '.kosisko.com', 'localhost', '127.0.0.1', '*']
@@ -199,3 +199,12 @@ CORS_ALLOWED_ORIGINS = [
     "https://kosisko.com",
     "https://www.kosisko.com",
 ]
+
+
+# कुकीज़ को मुख्य डोमेन और सभी सबडोमेन पर साझा करने के लिए
+SESSION_COOKIE_DOMAIN = '.kosisko.com' # (डेवलपमेंट के दौरान इसे None या छोड़ सकते हैं)
+SESSION_COOKIE_HTTPONLY = True          # जावास्क्रिप्ट से सुरक्षित (XSS से बचाव)
+SESSION_COOKIE_SECURE = True            # केवल HTTPS पर काम करे (प्रोडक्शन के लिए)
+SESSION_COOKIE_SAMESITE = 'Lax'
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True

@@ -1,5 +1,12 @@
 'use client';
 
+// 🌟 TypeScript को Google Global Object के बारे में बताने के लिए
+declare global {
+  interface Window {
+    google: any;
+  }
+}
+
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { MASTER_BRAND } from '../../utils/brand';
@@ -7,38 +14,37 @@ import { MASTER_BRAND } from '../../utils/brand';
 function AuthContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  
+
   const [step, setStep] = useState<
     'universal-input' | 'email-otp' | 'org-name' | 'mobile-input' | 'whatsapp-verify' | 'mobile-otp' | 'password-setup' | 'login-password' | 'forgot'
   >('universal-input');
-  
+
   const [identifier, setIdentifier] = useState('');
-  
+
   const [otpValues, setOtpValues] = useState(['', '', '', '']);
   const otpInputsRef = useRef<(HTMLInputElement | null)[]>([]);
 
-  const [username, setUsername] = useState(''); 
+  const [username, setUsername] = useState('');
   const [organizationName, setOrganizationName] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
   const [password, setPassword] = useState('');
-  
+
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-  
+
   const [greeting, setGreeting] = useState('Good Morning');
 
-  // 🌟 मैजिक लिंक से आने वाले ईमेल और ओटीपी को ऑटो-वेरीफाई करने के लिए नया इफ़ेक्ट
+  // 🌟 मैजिक लिंक से आने वाले ईमेल और ओटीपी को ऑटो-वेरीफाई करने के लिए
   useEffect(() => {
-    const emailParam = searchParams.get("email");
-    const otpParam = searchParams.get("otp");
-    const autoVerifyParam = searchParams.get("auto_verify");
+    const emailParam = searchParams.get('email');
+    const otpParam = searchParams.get('otp');
+    const autoVerifyParam = searchParams.get('auto_verify');
 
-    if (emailParam && otpParam && autoVerifyParam === "true") {
+    if (emailParam && otpParam && autoVerifyParam === 'true') {
       setIdentifier(emailParam);
       setSuccessMessage('Email verified successfully via Link!');
-      // सीधे अगले स्टेप (org-name) पर भेजें
       setStep('org-name');
     }
   }, [searchParams]);
@@ -79,6 +85,7 @@ function AuthContent() {
     logoUrl: MASTER_BRAND.logoUrl,
   });
 
+  // 🌟 डोमेन, सबडोमेन एवं कस्टम डोमेन डिटेक्शन
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const isLogoutQuery = urlParams.get('logout');
@@ -95,9 +102,11 @@ function AuthContent() {
       else setGreeting('Good Night');
     }
 
-    const hostname = window.location.hostname;
-    if (hostname.includes('tatamotors')) {
-      setBrand(prev => ({ ...prev, name: 'Tata Motors Workspace' }));
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname;
+      if (hostname.includes('tatamotors')) {
+        setBrand(prev => ({ ...prev, name: 'Tata Motors Workspace' }));
+      }
     }
   }, []);
 
@@ -111,21 +120,128 @@ function AuthContent() {
     return () => clearInterval(timer);
   }, [step, resendTimer]);
 
+  // 🌟 Google JWT Token को Decode करने का सुरक्षित फ़ंक्शन
+  const parseJwt = (token: string) => {
+    try {
+      const base64Url = token.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(
+        window.atob(base64)
+          .split('')
+          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      );
+      return JSON.parse(jsonPayload);
+    } catch (e) {
+      console.error('Failed to parse Google JWT:', e);
+      return null;
+    }
+  };
+
+  // 🌟 Google रिस्पॉन्स हैंडलर (Django के GoogleOAuthOnboardingView के अनुसार)
+  const handleGoogleResponse = async (response: any) => {
+    setLoading(true);
+    setErrorMessage('');
+    try {
+      const decoded = parseJwt(response.credential);
+      const email = decoded?.email;
+      const firstName = decoded?.given_name || decoded?.name?.split(' ')[0] || '';
+      const lastName = decoded?.family_name || decoded?.name?.split(' ').slice(1).join(' ') || '';
+
+      if (!email) {
+        setLoading(false);
+        setErrorMessage('Failed to extract email from Google identity.');
+        return;
+      }
+
+      // रिलेटिव URL ताकि सबडोमेन, कस्टम डोमेन या मुख्य डोमेन पर होस्ट हेडर सीधा बैकएंड को मिले
+      const res = await fetch('/api/v1/auth/google/login/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email,
+          first_name: firstName,
+          last_name: lastName,
+          token: response.credential,
+        }),
+      });
+
+      const data = await res.json();
+      setLoading(false);
+
+      if (res.ok) {
+        // केस 1: पुराना/रजिस्टर्ड यूज़र (Direct Login)
+        if (data.action === 'login' || data.status === 'success' && data.token) {
+          const authToken = data.token || data.access || 'google_session_token_' + Date.now();
+          localStorage.setItem('authToken', authToken);
+          document.cookie = `kosisko_logged_in=true; path=/; max-age=86400; SameSite=Lax`;
+          sessionStorage.removeItem('kosisko_logout_active');
+          window.location.href = '/customer/marketplace';
+        } 
+        // केस 2: नया यूज़र (Sign-Up / Onboarding Required)
+        else if (data.action === 'onboarding_required' || !data.token) {
+          const userEmail = data.prefilled_data?.email || email;
+          setIdentifier(userEmail);
+          setUsername(userEmail.split('@')[0] + Math.floor(100 + Math.random() * 900));
+          setOrganizationName(data.prefilled_data?.organization_name || firstName ? `${firstName}'s Org` : '');
+          setStep('org-name');
+          setSuccessMessage('Google verified! Please confirm your Organization Name to complete setup.');
+        }
+      } else {
+        setErrorMessage(data.error || data.message || 'Google authentication failed on server.');
+      }
+    } catch (err) {
+      setLoading(false);
+      setErrorMessage('Server connection error during Google sign-in.');
+    }
+  };
+
+  // 🌟 Google SDK Initialization
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      if (typeof window !== 'undefined' && window.google?.accounts?.id) {
+        const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+        if (clientId) {
+          window.google.accounts.id.initialize({
+            client_id: clientId,
+            callback: handleGoogleResponse,
+            auto_select: false,
+          });
+        }
+      }
+    };
+    document.body.appendChild(script);
+
+    return () => {
+      if (script.parentNode) {
+        script.parentNode.removeChild(script);
+      }
+    };
+  }, []);
+
+  // 🌟 Google Sign-In बटन क्लिक ट्रिगर (Missing function resolved)
   const handleGoogleSignIn = () => {
     setLoading(true);
     setErrorMessage('');
 
-    // 🌟 1. रीडायरेक्ट होने से पहले ही लोकल स्टोरेज में सेशन टोकन और फ्लैग सेट कर दें
-    localStorage.setItem('authToken', 'google_session_token_' + Date.now());
-    sessionStorage.removeItem('kosisko_logout_active');
-    document.cookie = "kosisko_logged_in=true; path=/; max-age=86400; SameSite=Lax";
-
-    const clientId = '297158802396-jhqr40pv045bivtmuui4qdkgvdl9081b.apps.googleusercontent.com';
-    const redirectUri = window.location.origin + '/customer/marketplace';
-    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=email profile`;
-    window.location.href = googleAuthUrl;
+    if (typeof window !== 'undefined' && window.google?.accounts?.id) {
+      window.google.accounts.id.prompt((notification: any) => {
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          setLoading(false);
+          setErrorMessage('Google prompt dismissed or suppressed. Please try again.');
+        }
+      });
+    } else {
+      setLoading(false);
+      setErrorMessage('Google Sign-In SDK is still initializing. Please wait a second and retry.');
+    }
   };
 
+  // 🌟 पासकी / बायोमेट्रिक लॉगिन
   const handlePasskeyLogin = async () => {
     setLoading(true);
     setErrorMessage('');
@@ -146,10 +262,9 @@ function AuthContent() {
         // @ts-ignore
         await navigator.credentials.get({ publicKey: publicKeyCredentialRequestOptions });
 
-        // 🌟 पासकी सक्सेसफुल होने पर तुरंत टोकन और फ्लैग सेट करें
         localStorage.setItem('authToken', 'passkey_session_token_' + Date.now());
         sessionStorage.removeItem('kosisko_logout_active');
-        document.cookie = "kosisko_logged_in=true; path=/; max-age=86400; SameSite=Lax";
+        document.cookie = 'kosisko_logged_in=true; path=/; max-age=86400; SameSite=Lax';
 
         setLoading(false);
         window.location.href = '/customer/marketplace';
@@ -161,20 +276,20 @@ function AuthContent() {
       const publicKeyCredentialCreationOptions: PublicKeyCredentialCreationOptions = {
         challenge: Uint8Array.from('kosisko_register_challenge', c => c.charCodeAt(0)),
         rp: {
-          name: "Kosisko",
+          name: 'Kosisko',
           id: window.location.hostname,
         },
         user: {
-          id: Uint8Array.from(identifier || "user_kosisko_id", c => c.charCodeAt(0)),
-          name: identifier || "user@kosisko.com",
-          displayName: "Kosisko User",
+          id: Uint8Array.from(identifier || 'user_kosisko_id', c => c.charCodeAt(0)),
+          name: identifier || 'user@kosisko.com',
+          displayName: 'Kosisko User',
         },
         pubKeyCredParams: [
-          { alg: -7, type: "public-key" }, 
-          { alg: -257, type: "public-key" }
+          { alg: -7, type: 'public-key' },
+          { alg: -257, type: 'public-key' }
         ],
         timeout: 60000,
-        attestation: "none"
+        attestation: 'none'
       };
 
       // @ts-ignore
@@ -183,26 +298,26 @@ function AuthContent() {
       });
 
       if (newCredential) {
-        // 🌟 नया पासकी रजिस्टर होने पर भी टोकन सेट करें
         localStorage.setItem('authToken', 'passkey_session_token_' + Date.now());
         sessionStorage.removeItem('kosisko_logout_active');
+        document.cookie = 'kosisko_logged_in=true; path=/; max-age=86400; SameSite=Lax';
 
         setLoading(false);
         setSuccessMessage('Passkey successfully registered and verified!');
-        setTimeout(() => { 
-          window.location.href = '/customer/marketplace'; 
+        setTimeout(() => {
+          window.location.href = '/customer/marketplace';
         }, 1000);
       } else {
         setLoading(false);
         setErrorMessage('Passkey generation was cancelled.');
       }
-
     } catch (err) {
       setLoading(false);
-      setErrorMessage('Biometric/Passkey setup failed. Ensure site is on HTTPS or use Google/Password login.');
+      setErrorMessage('Biometric/Passkey setup failed. Ensure site is on HTTPS.');
     }
   };
 
+  // 🌟 यूज़र एक्सिस्टेंस चेक (लॉगिन बनाम साइनअप रूटिंग)
   const handleUniversalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!identifier.trim()) {
@@ -223,9 +338,11 @@ function AuthContent() {
       setLoading(false);
 
       if (response.ok) {
+        // अगर यूज़र पहले से है तो सीधे पासवर्ड से लॉगिन
         if (data.exists) {
           setStep('login-password');
         } else {
+          // अगर नया यूज़र है और ईमेल दिया है, तो OTP भेजें
           if (identifier.includes('@')) {
             const otpRes = await fetch('/api/v1/auth/send-otp/', {
               method: 'POST',
@@ -353,9 +470,10 @@ function AuthContent() {
     setStep('password-setup');
   };
 
+  // 🌟 अंतिम सबमिशन (Login या Onboarding/Signup)
   const handleFinalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (password.length < 8) {
       setErrorMessage('Password must be at least 8 characters long.');
       return;
@@ -366,19 +484,17 @@ function AuthContent() {
 
     try {
       const isLogin = step === 'login-password';
-      const endpoint = isLogin 
-        ? '/api/v1/auth/login/' 
-        : '/api/v1/auth/signup/';
+      const endpoint = isLogin ? '/api/v1/auth/login/' : '/api/v1/auth/signup/';
 
       const payload = isLogin
         ? { identifier: identifier.trim(), password: password }
-        : { 
-            email: identifier.includes('@') ? identifier.trim() : '', 
-            username: username.trim() || identifier.trim(), 
-            password: password, 
-            fullName: organizationName, 
-            organizationName: organizationName, 
-            mobileNumber: mobileNumber 
+        : {
+            email: identifier.includes('@') ? identifier.trim() : '',
+            username: username.trim() || identifier.trim(),
+            password: password,
+            fullName: organizationName,
+            organizationName: organizationName,
+            mobileNumber: mobileNumber
           };
 
       const response = await fetch(endpoint, {
@@ -398,14 +514,12 @@ function AuthContent() {
           localStorage.setItem('authToken', 'active_session_token_' + Date.now());
         }
 
-        // 🌟 कुकी सेट करना
-        document.cookie = "kosisko_logged_in=true; path=/; max-age=86400; SameSite=Lax";
-
+        // सबडोमेन और कस्टम डोमेन सपोर्ट के लिए कुकी सेट करें
+        document.cookie = 'kosisko_logged_in=true; path=/; max-age=86400; SameSite=Lax';
         sessionStorage.removeItem('kosisko_logout_active');
-        
+
         window.location.href = '/customer/marketplace';
       } else {
-        setLoading(false);
         setErrorMessage(data.message || data.error || 'Authentication failed. Please check credentials.');
       }
     } catch (err) {
@@ -435,22 +549,20 @@ function AuthContent() {
   };
 
   return (
-    <div 
-      className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-50 via-slate-50 to-indigo-50 text-slate-900 flex items-center justify-center p-4 relative overflow-hidden font-sans"
-    >
+    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-50 via-slate-50 to-indigo-50 text-slate-900 flex items-center justify-center p-4 relative overflow-hidden font-sans">
       
-      {/* पूरे पेज पर मक्खन की तरह घूमने वाला लाइव माउस स्पॉटलाइट इफ़ेक्ट */}
-      <div 
+      {/* पूरे पेज पर लाइव माउस स्पॉटलाइट इफ़ेक्ट */}
+      <div
         className="absolute pointer-events-none inset-0 transition-opacity duration-300 z-0"
         style={{
           background: `radial-gradient(600px circle at ${mousePos.x}px ${mousePos.y}px, rgba(248, 4, 65, 0.25), transparent 70%)`
         }}
       ></div>
 
-      {/* अत्यंत सूक्ष्म और आधुनिक डॉट ग्रिड पैटर्न */}
+      {/* आधुनिक डॉट ग्रिड पैटर्न */}
       <div className="absolute inset-0 bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:28px_28px] opacity-40 pointer-events-none"></div>
 
-      {/* जीवंत एम्बिएंट फ्लैशिंग ओर्ब्स */}
+      {/* जीवंत एम्बिएंट ओर्ब्स */}
       <div className="absolute top-1/4 left-1/4 w-[700px] h-[700px] bg-amber-400/30 rounded-full blur-[190px] pointer-events-none animate-pulse"></div>
       <div className="absolute bottom-1/4 right-1/4 w-[700px] h-[700px] bg-indigo-400/25 rounded-full blur-[200px] pointer-events-none animate-pulse duration-1000"></div>
 
@@ -469,15 +581,15 @@ function AuthContent() {
           </div>
         </div>
 
-        {/* 🌟 प्योर व्हाइट लोगो बॉक्स (माउस ले जाते ही स्मूथ ज़ूम इफ़ेक्ट) */}
+        {/* प्योर व्हाइट लोगो बॉक्स */}
         <div className="text-center mb-6 flex flex-col items-center justify-center relative z-10">
           <div className="absolute w-52 h-20 bg-gradient-to-r from-amber-400/25 via-yellow-300/35 to-amber-400/25 rounded-full blur-2xl pointer-events-none animate-pulse"></div>
-          
-          <div className="w-full max-w-[230px] py-4 px-6 rounded-[28px] bg-white border border-slate-200 shadow-[0_8px_25px_rgba(0,0,0,0.06)] flex items-center justify-center min-h-[90px] group cursor-pointer overflow-hidden transition-all duration-300 hover:scale-140 hover:border-amber-400 hover:shadow-[0_15px_40px_rgba(245,158,11,0.3)] relative z-10">
-            <img 
-              src={brand.logoUrl} 
-              alt={brand.name} 
-              className="w-full h-auto object-contain max-h-16 transition-transform duration-300 ease-out group-hover:scale-110 drop-shadow-[0_4px_15px_rgba(245,158,11,0.3)]"
+
+          <div className="w-full max-w-[230px] py-4 px-6 rounded-[28px] bg-white border border-slate-200 shadow-[0_8px_25px_rgba(0,0,0,0.06)] flex items-center justify-center min-h-[90px] group cursor-pointer overflow-hidden transition-all duration-300 hover:scale-110 hover:border-amber-400 hover:shadow-[0_15px_40px_rgba(245,158,11,0.3)] relative z-10">
+            <img
+              src={brand.logoUrl}
+              alt={brand.name}
+              className="w-full h-auto object-contain max-h-16 transition-transform duration-300 ease-out group-hover:scale-105 drop-shadow-[0_4px_15px_rgba(245,158,11,0.3)]"
             />
           </div>
         </div>
@@ -494,12 +606,13 @@ function AuthContent() {
           </div>
         )}
 
-        {/* सेंट्रलाइज्ड शॉर्टकट बटन्स (क्लिक फीडबैक के साथ) */}
+        {/* शॉर्टकट बटन्स */}
         {step === 'universal-input' && (
           <div className="space-y-3.5 mb-6 animate-fadeIn relative z-10">
             <button
               type="button"
               onClick={handleGoogleSignIn}
+              disabled={loading}
               className="w-full py-4 px-4 rounded-2xl bg-white hover:bg-slate-100 active:bg-slate-900 active:text-white border border-slate-300 text-slate-900 text-xs font-extrabold flex items-center justify-center gap-3 transition-none cursor-pointer shadow-sm"
             >
               <span className="text-base">🌐</span>
@@ -515,7 +628,7 @@ function AuthContent() {
               <span className="text-base">🧬</span>
               <span>Hardware Passkey / Biometric Login</span>
             </button>
-            
+
             <div className="flex items-center my-5">
               <div className="flex-1 border-t border-slate-300"></div>
               <span className="px-3 text-[9px] text-slate-400 uppercase tracking-widest font-black">Or Enterprise Access</span>
@@ -531,8 +644,8 @@ function AuthContent() {
               <label className="block text-[10px] uppercase tracking-wider font-extrabold text-slate-700 mb-1.5">
                 Username, Work Email, or Mobile Number
               </label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 required
                 placeholder="e.g. john_doe, name@company.com, 9876543210"
                 value={identifier}
@@ -557,7 +670,7 @@ function AuthContent() {
             <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 text-center mb-2">
               <p className="text-xs text-slate-700">Enter 4-digit OTP sent to <span className="text-amber-700 font-bold">{identifier}</span></p>
             </div>
-            
+
             <div className="flex justify-center gap-3 my-3" onPaste={handleOtpPaste}>
               {otpValues.map((digit, idx) => (
                 <input
@@ -574,9 +687,9 @@ function AuthContent() {
 
             <div className="flex justify-between text-[10px] items-center">
               <button type="button" onClick={() => setStep('universal-input')} className="text-slate-500 hover:underline cursor-pointer">← Back</button>
-              <button 
-                type="button" 
-                onClick={handleResendEmailOtp} 
+              <button
+                type="button"
+                onClick={handleResendEmailOtp}
                 disabled={!canResend}
                 className={`font-bold cursor-pointer ${canResend ? 'text-amber-700 hover:underline' : 'text-slate-400 cursor-not-allowed'}`}
               >
@@ -590,15 +703,15 @@ function AuthContent() {
           </form>
         )}
 
-        {/* ऑर्गनाइजेशन नेम और यूजरनेम सेटअप */}
+        {/* स्टेप 3: ऑर्गनाइजेशन नेम और यूजरनेम सेटअप */}
         {step === 'org-name' && (
           <form onSubmit={handleOrgSubmit} className="space-y-4 animate-fadeIn relative z-10">
             <div>
               <label className="block text-[10px] uppercase tracking-wider font-extrabold text-slate-700 mb-1.5">
                 Choose a Unique Username
               </label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 required
                 placeholder="e.g. john_doe"
                 value={username}
@@ -609,8 +722,8 @@ function AuthContent() {
               <label className="block text-[10px] uppercase tracking-wider font-extrabold text-slate-700 mb-1.5">
                 Organization Name
               </label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 required
                 placeholder="Enter organization name"
                 value={organizationName}
@@ -624,15 +737,15 @@ function AuthContent() {
           </form>
         )}
 
-        {/* मोबाइल नंबर */}
+        {/* स्टेप 4: मोबाइल नंबर */}
         {step === 'mobile-input' && (
           <form onSubmit={handleMobileSubmit} className="space-y-4 animate-fadeIn relative z-10">
             <div>
               <label className="block text-[10px] uppercase tracking-wider font-extrabold text-slate-700 mb-1.5">
                 Mobile Number (WhatsApp)
               </label>
-              <input 
-                type="tel" 
+              <input
+                type="tel"
                 required
                 placeholder="9876543210"
                 value={mobileNumber}
@@ -646,7 +759,7 @@ function AuthContent() {
           </form>
         )}
 
-        {/* व्हाट्सएप वेरिफिकेशन */}
+        {/* स्टेप 5: व्हाट्सएप वेरिफिकेशन */}
         {step === 'whatsapp-verify' && (
           <div className="space-y-4 text-center animate-fadeIn relative z-10">
             <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200">
@@ -677,7 +790,7 @@ function AuthContent() {
           </div>
         )}
 
-        {/* पासवर्ड सेटअप */}
+        {/* स्टेप 6: पासवर्ड सेटअप (साइनअप कंप्लीशन) */}
         {step === 'password-setup' && (
           <form onSubmit={handleFinalSubmit} className="space-y-4 animate-fadeIn relative z-10">
             <div>
@@ -685,16 +798,16 @@ function AuthContent() {
                 Create Secure Password (Min 8 Characters)
               </label>
               <div className="relative">
-                <input 
-                  type={showPassword ? "text" : "password"} 
+                <input
+                  type={showPassword ? 'text' : 'password'}
                   required
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500 pr-10"
                 />
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-sm cursor-pointer"
                 >
@@ -702,7 +815,6 @@ function AuthContent() {
                 </button>
               </div>
 
-              {/* लाइव पासवर्ड स्ट्रेंथ मीटर बार */}
               {password && (
                 <div className="mt-2 space-y-1">
                   <div className="flex justify-between items-center text-[9px]">
@@ -712,8 +824,8 @@ function AuthContent() {
                     </span>
                   </div>
                   <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full transition-all duration-300 ${passwordStrength.color}`} 
+                    <div
+                      className={`h-full transition-all duration-300 ${passwordStrength.color}`}
                       style={{ width: `${passwordStrength.score}%` }}
                     ></div>
                   </div>
@@ -733,7 +845,7 @@ function AuthContent() {
           </form>
         )}
 
-        {/* लॉगिन पासवर्ड */}
+        {/* स्टेप 7: लॉगिन पासवर्ड */}
         {step === 'login-password' && (
           <form onSubmit={handleFinalSubmit} className="space-y-4 animate-fadeIn relative z-10">
             <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-between mb-2">
@@ -746,16 +858,16 @@ function AuthContent() {
                 Master Security Password
               </label>
               <div className="relative">
-                <input 
-                  type={showPassword ? "text" : "password"} 
+                <input
+                  type={showPassword ? 'text' : 'password'}
                   required
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500 pr-10"
                 />
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-sm cursor-pointer"
                 >
@@ -778,7 +890,7 @@ function AuthContent() {
           </form>
         )}
 
-        {/* फॉरगेट पासवर्ड स्क्रीन */}
+        {/* स्टेप 8: फॉरगेट पासवर्ड */}
         {step === 'forgot' && (
           <form onSubmit={handleForgotPassword} className="space-y-4 animate-fadeIn relative z-10">
             <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 mb-2">
@@ -787,8 +899,8 @@ function AuthContent() {
             </div>
 
             <div>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 required
                 placeholder="Email, Username, or Mobile"
                 value={identifier}
@@ -804,13 +916,15 @@ function AuthContent() {
           </form>
         )}
 
-        {/* लीगल-सेफ और 256-बिट एनक्रिप्टेड फुटर बैज */}
+        {/* फुटर बैज */}
         <div className="mt-8 text-center border-t border-slate-200 pt-4 flex flex-col items-center justify-center gap-2 relative z-10">
           <div className="flex items-center gap-1.5 text-[9px] text-emerald-700 font-bold bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 shadow-sm">
             <span>🔒</span>
             <span>256-bit Encrypted Secure Gateway</span>
           </div>
-          <span className="text-[10px] text-slate-500 font-medium">Powered by <strong className="text-slate-900 font-black tracking-wider">{brand.company}</strong></span>
+          <span className="text-[10px] text-slate-500 font-medium">
+            Powered by <strong className="text-slate-900 font-black tracking-wider">{brand.company}</strong>
+          </span>
         </div>
 
       </div>
@@ -818,7 +932,6 @@ function AuthContent() {
   );
 }
 
-// 🌟 यह मुख्य पेज एक्सपोर्ट कॉम्पोनेन्ट है जो Suspense बाउंड्री के साथ एरर को पूरी तरह हल कर देता है
 export default function LoginPage() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center text-xs font-bold text-slate-500">Loading Secure Portal...</div>}>

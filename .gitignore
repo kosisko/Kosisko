@@ -4,3 +4,13 @@ venv/
 db.sqlite3
 dist/
 build/
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Next.js & Node
+frontend/.next/
+frontend/node_modules/
+node_modules/
+ecosystem.config.js

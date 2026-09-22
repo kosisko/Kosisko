@@ -75,7 +75,7 @@ class TenantAppSubscription(models.Model):
         ('EXPIRED_ARCHIVE', 'Expired (Read-Only Data Archive)'),
     )
 
-    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="subscriptions")
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="app_subscriptions")
     app = models.ForeignKey(KosiskoApp, on_delete=models.CASCADE, null=True, blank=True)
     module = models.ForeignKey(BusinessModule, on_delete=models.CASCADE, null=True, blank=True)
     

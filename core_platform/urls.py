@@ -1,21 +1,26 @@
 from django.contrib import admin
 from django.urls import path
-from core_platform.views import (
-    api_signup, 
+from .views import (
+    api_signup,
     api_logout,
-    send_otp_api, 
-    verify_otp_api, 
-    check_user_exists, 
-    calculate_app_price, 
-    MasterDashboardBootstrapView, 
-    DynamicVoiceAIIntentView
+    send_otp_api,
+    verify_otp_api,
+    check_user_exists,
+    calculate_app_price,
+    MasterDashboardBootstrapView,
+    DynamicVoiceAIIntentView,
+    UniversalLoginAPIView,
+    UniversalForgotPasswordAPIView,
+    ResetPasswordAPIView,
+    CompleteGoogleSignupView,
+    GoogleOAuthOnboardingView
 )
-from .views import UniversalLoginAPIView, UniversalForgotPasswordAPIView
-from .views import ResetPasswordAPIView
 
 urlpatterns = [
     # 🔐 ऑथेंटिकेशन एपीआई (यूनिवर्सल लॉगिन, साइन-अप और अन्य)
     path('api/v1/auth/login/', UniversalLoginAPIView.as_view(), name='universal_login'),
+    path('api/v1/auth/google/login/', GoogleOAuthOnboardingView.as_view(), name='google_oauth_login'),
+    path('api/v1/auth/google/complete-signup/', CompleteGoogleSignupView.as_view(), name='google_complete_signup'),
     path('api/v1/auth/signup/', api_signup, name='api_signup'),
     path('api/v1/auth/check-user/', check_user_exists, name='check_user_exists'),
     path('api/v1/auth/send-otp/', send_otp_api, name='send_otp_api'),
@@ -24,12 +29,12 @@ urlpatterns = [
     path('api/v1/auth/forgot-password/', UniversalForgotPasswordAPIView.as_view(), name='universal_forgot_password'),
     path('api/v1/auth/reset-password/', ResetPasswordAPIView.as_view(), name='reset_password'),
 
-   # 💰 कूपन और कस्टम प्राइसिंग कैलकुलेशन एपीआई
+    # 💰 कूपन और कस्टम प्राइसिंग कैलकुलेशन एपीआई
     path('api/v1/calculate-price/', calculate_app_price, name='calculate_app_price'),
-    
+
     # 📊 डैशबोर्ड बूटस्ट्रैप और ऐप्स लोड करने के लिए एपीआई
     path('api/v1/bootstrap/', MasterDashboardBootstrapView.as_view(), name='dashboard_bootstrap'),
-    
+
     # 🤖 जेमिनी एआई वॉयस/इंटेंट एपीआई
     path('api/v1/ai-intent/', DynamicVoiceAIIntentView.as_view(), name='ai-intent'),
 ]

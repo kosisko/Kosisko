@@ -14,6 +14,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from rest_framework.views import APIView
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -27,12 +28,12 @@ from .permissions import IsTenantAdmin, IsSuperAdminOnly, IsSameTenantObject
 
 # अपने सभी मॉडल्स इम्पोर्ट करें (Single Source of Truth: Tenant)
 from .models import (
-    Tenant, 
-    AppStoreModule, 
-    TenantSubscription, 
-    AgenticAIActionLog, 
-    UserProfile, 
-    TenantCustomPricing, 
+    Tenant,
+    AppStoreModule,
+    TenantSubscription,
+    AgenticAIActionLog,
+    UserProfile,
+    TenantCustomPricing,
     DiscountCoupon
 )
 
@@ -60,24 +61,23 @@ def get_kosisko_footer():
 
 
 # -----------------------------------------------------------------------------
-# 1. PROFESSIONAL WELCOME EMAIL (With Auto-Login Magic Token Link & Fixed Arguments)
+# 1. PROFESSIONAL WELCOME EMAIL (Dynamic Domain & Tenant Aware)
 # -----------------------------------------------------------------------------
-def send_professional_welcome_email(user_obj, organization_name="Enterprise Workspace"):
+def send_professional_welcome_email(user_obj, organization_name="Enterprise Workspace", base_url="http://localhost:3000"):
     user_email = user_obj.email
     username = user_obj.username
     subject = f'Welcome to Kosisko, {username} – Your Enterprise Workspace is Ready!'
     footer_text = get_kosisko_footer()
 
-    # 🌟 ऑटो-लॉगिन मैजिक टोकन जनरेट करना (ताकि यूजर बिना पासवर्ड डैशबोर्ड जा सके)
+    # 🌟 ऑटो-लॉगिन मैजिक टोकन जनरेट करना
     magic_token = secrets.token_urlsafe(32)
-    
-    # इसे यूजर के प्रोफाइल या सेशन में सेव कर लें ताकि फ्रंटएंड इसे वेरीफाई कर सके
+
     profile, _ = UserProfile.objects.get_or_create(user=user_obj)
     profile.magic_login_token = magic_token
     profile.save()
 
-    # मैजिक लॉगिन लिंक (फ्रंटएंड इस टोकन को पकड़कर ऑटो-लॉगिन कर देगा)
-    dashboard_link = f"http://localhost:3000/customer/marketplace?token={magic_token}&username={username}"
+    # डायनेमिक बेस यूआरएल का उपयोग (सबडोमेन या कस्टम डोमेन के साथ सिंक)
+    dashboard_link = f"{base_url}/customer/marketplace?token={magic_token}&username={username}"
 
     html_content = f"""
     <!DOCTYPE html>
@@ -106,7 +106,7 @@ def send_professional_welcome_email(user_obj, organization_name="Enterprise Work
             <h2>Welcome to Kosisko!</h2>
             <p>Dear <strong>{username}</strong>,</p>
             <p>Welcome to Kosisko! – <span class="slogan">'कोशिश से कामयाबी की ओर'</span>. We are absolutely thrilled and honoured to have you onboard.</p>
-            
+
             <div class="highlight-box">
                 <p style="margin: 0; color: #0f172a; font-weight: 700;">🔑 Your Enterprise Workspace Details:</p>
                 <p style="margin: 8px 0 0 0; font-size: 13px;">
@@ -115,18 +115,12 @@ def send_professional_welcome_email(user_obj, organization_name="Enterprise Work
                 </p>
             </div>
 
-            <p>Your dedicated enterprise workspace for <strong>{organization_name}</strong> has been successfully provisioned and secured. You can now experience the next generation of seamless business management, AI-driven tools, and high-speed workflows. Click the secure button below to launch your master dashboard instantly without entering any password:</p>
-            
+            <p>Your dedicated enterprise workspace for <strong>{organization_name}</strong> has been successfully provisioned and secured. Click the secure button below to launch your master dashboard instantly:</p>
+
             <div class="btn-container">
                 <a href="{dashboard_link}" class="btn">Launch Your Dashboard →</a>
             </div>
 
-            <p>If you have any questions or need assistance setting up your modules, our 24/7 engineering support team is always here for you.</p>
-            
-            <p>Thank you for choosing Kosisko. Let's build the future together!<br><br>
-
-            <p style="margin-top: 30px;">Warm regards,<br><strong>The Kosisko Executive Team</strong></p>
-            
             <div class="footer">
                 {footer_text}
             </div>
@@ -149,7 +143,7 @@ def send_professional_welcome_email(user_obj, organization_name="Enterprise Work
 
 
 # -----------------------------------------------------------------------------
-# 2. PROFESSIONAL PASSWORD RESET EMAIL
+# 2. PROFESSIONAL PASSWORD RESET EMAIL (Dynamic Domain)
 # -----------------------------------------------------------------------------
 def send_professional_password_reset_email(user_email, username, method_used, reset_link):
     subject = f'Kosisko - Password Recovery Instructions'
@@ -182,15 +176,13 @@ def send_professional_password_reset_email(user_email, username, method_used, re
             <p>Hello <strong>{username}</strong>,</p>
             <p>We received a master password reset request for your Kosisko account using your <strong>{method_used}</strong>.</p>
             <p>To securely reset your password, please click the encrypted button below:</p>
-            
+
             <div class="btn-container">
                 <a href="{reset_link}" class="btn">Reset My Master Password →</a>
             </div>
 
             <p>If you did not request this change, please ignore this email immediately.</p>
-            
-            <p style="margin-top: 30px;">Warm regards,<br><strong>The Kosisko Security Team</strong><br><span class="slogan">'कोशिश से कामयाबी की ओर'</span></p>
-            
+
             <div class="footer">
                 {footer_text}
             </div>
@@ -212,14 +204,13 @@ def send_professional_password_reset_email(user_email, username, method_used, re
 
 
 # -----------------------------------------------------------------------------
-# 3. PROFESSIONAL OTP EMAIL (With Auto-Fill & Auto-Verify Magic Link)
+# 3. PROFESSIONAL OTP EMAIL (Dynamic Domain)
 # -----------------------------------------------------------------------------
-def send_professional_otp_email(user_email, otp_code):
+def send_professional_otp_email(user_email, otp_code, base_url="http://localhost:3000"):
     subject = 'Kosisko Security Verification Code'
     footer_text = get_kosisko_footer()
 
-    existing_verify_page = "http://localhost:3000/login"
-    auto_verify_link = f"{existing_verify_page}?email={user_email}&otp={otp_code}&auto_verify=true"
+    auto_verify_link = f"{base_url}/login?email={user_email}&otp={otp_code}&auto_verify=true"
 
     html_content = f"""
     <!DOCTYPE html>
@@ -248,19 +239,13 @@ def send_professional_otp_email(user_email, otp_code):
             <h2>Email Verification Code</h2>
             <p>Hello,</p>
             <p>Welcome to Kosisko! – <span class="slogan">'कोशिश से कामयाबी की ओर'</span>. To complete your secure registration, use the verification code below:</p>
-            
-            <div class="otp-box">{otp_code}</div>
 
-            <p style="text-align: center; font-size: 13px; color: #64748b;">Click the button below to auto-verify and proceed instantly:</p>
+            <div class="otp-box">{otp_code}</div>
 
             <div class="btn-container">
                 <a href="{auto_verify_link}" class="btn">Verify & Proceed to Setup →</a>
             </div>
 
-            <p style="font-size: 12px; color: #94a3b8; text-align: center; margin-top: 15px;">This code is valid for a limited time. Please do not share. This security code is strictly confidential.</p>
-            
-            <p style="margin-top: 30px; color: #475569;">Warm regards,<br><strong>The Kosisko Security Team</strong></p>
-            
             <div class="footer">
                 {footer_text}
             </div>
@@ -364,16 +349,16 @@ def check_user_exists(request):
         try:
             data = json.loads(request.body)
             identifier = data.get('identifier') or data.get('email')
-            
+
             if not identifier:
                 return JsonResponse({"status": "error", "message": "Identifier is required"}, status=400)
-            
+
             exists = User.objects.filter(
-                Q(username__iexact=identifier) | 
-                Q(email__iexact=identifier) | 
+                Q(username__iexact=identifier) |
+                Q(email__iexact=identifier) |
                 Q(profile__mobile_number=identifier)
             ).exists()
-            
+
             return JsonResponse({"status": "success", "exists": exists})
         except Exception as e:
             return JsonResponse({"status": "error", "message": str(e)}, status=500)
@@ -386,14 +371,17 @@ def send_otp_api(request):
         try:
             data = json.loads(request.body)
             email = data.get('email')
-            
+
             if not email:
                 return JsonResponse({"status": "error", "message": "Email is required."}, status=400)
 
             otp_code = str(random.randint(1000, 9999))
-            OTP_STORAGE[email] = otp_code 
-            
-            send_professional_otp_email(email, otp_code)
+            OTP_STORAGE[email] = otp_code
+
+            scheme = 'https' if request.is_secure() else 'http'
+            base_url = f"{scheme}://{request.get_host()}"
+
+            send_professional_otp_email(email, otp_code, base_url=base_url)
 
             return JsonResponse({
                 "status": "success",
@@ -416,7 +404,7 @@ def verify_otp_api(request):
             stored_otp = OTP_STORAGE.get(email)
 
             if stored_otp and stored_otp == user_otp:
-                del OTP_STORAGE[email] 
+                del OTP_STORAGE[email]
                 return JsonResponse({"status": "success", "message": "OTP verified successfully."})
             else:
                 return JsonResponse({"status": "error", "message": "Invalid OTP. Please enter the correct code."}, status=400)
@@ -430,15 +418,14 @@ def api_signup(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            
-            # 🌟 DRF Serializer का उपयोग करके डेटा वैलिडेट करना
+
             serializer = UserSignupSerializer(data=data)
             if not serializer.is_valid():
                 return JsonResponse({'status': 'error', 'message': serializer.errors}, status=400)
 
             validated_data = serializer.validated_data
             email = validated_data.get('email', '')
-            username = validated_data.get('username') or email 
+            username = validated_data.get('username') or email
             password = validated_data.get('password')
             full_name = validated_data.get('first_name', '')
             mobile_number = data.get('mobileNumber', '')
@@ -450,21 +437,27 @@ def api_signup(request):
             if len(password) < 8:
                 return JsonResponse({'status': 'error', 'message': 'Password must be at least 8 characters long.'}, status=400)
 
-            user = User.objects.create_user(username=username, email=email, password=password, first_name=full_name)
-            
-            UserProfile.objects.update_or_create(
-                user=user,
-                defaults={
-                    'role': 'customer',
-                    'organization_name': organization_name,
-                    'mobile_number': mobile_number,
-                    'is_mobile_verified': True,
-                    'is_profile_completed': True 
-                }
-            )
+            current_tenant = getattr(request, 'tenant', None)
+            scheme = 'https' if request.is_secure() else 'http'
+            base_url = f"{scheme}://{request.get_host()}"
 
-            if user:
-                send_professional_welcome_email(user, organization_name)
+            with transaction.atomic():
+                user = User.objects.create_user(username=username, email=email, password=password, first_name=full_name)
+
+                UserProfile.objects.update_or_create(
+                    user=user,
+                    defaults={
+                        'role': 'customer',
+                        'organization_name': organization_name,
+                        'mobile_number': mobile_number,
+                        'tenant': current_tenant,
+                        'is_mobile_verified': True,
+                        'is_profile_completed': True
+                    }
+                )
+
+                if user:
+                    send_professional_welcome_email(user, organization_name, base_url=base_url)
 
             return JsonResponse({'status': 'success', 'message': 'Account created successfully!', 'role': 'customer'})
         except Exception as e:
@@ -484,8 +477,8 @@ def api_login(request):
                 return JsonResponse({"status": "error", "message": "Identifier and password are required."}, status=400)
 
             user_obj = User.objects.filter(
-                Q(username__iexact=identifier) | 
-                Q(email__iexact=identifier) | 
+                Q(username__iexact=identifier) |
+                Q(email__iexact=identifier) |
                 Q(profile__mobile_number=identifier)
             ).first()
 
@@ -495,7 +488,7 @@ def api_login(request):
                     profile = getattr(user_obj, 'profile', None)
                     is_completed = profile.is_profile_completed if profile else False
                     role = profile.role if profile else 'customer'
-                    
+
                     return JsonResponse({
                         "status": "success",
                         "message": "Login successful",
@@ -573,7 +566,7 @@ class DynamicVoiceAIIntentView(APIView):
     def post(self, request):
         try:
             spoken_text = request.data.get("transcript", "").strip().lower()
-            
+
             all_modules = list(AppStoreModule.objects.values_list('module_code', flat=True))
             all_panels = ['open_customizer', 'open_search', 'toggle_sidebar', 'open_dashboard']
             active_capabilities = all_modules + all_panels
@@ -581,9 +574,9 @@ class DynamicVoiceAIIntentView(APIView):
             prompt = f"""
             You are the Core AGI of Kosisko.
             You have real-time access to these system capabilities: {active_capabilities}
-            
+
             User Input: "{spoken_text}"
-            
+
             Task:
             - Analyze the user intent with pure contextual reasoning.
             - If the intent matches any of the capabilities in {active_capabilities}, return the exact code.
@@ -593,7 +586,7 @@ class DynamicVoiceAIIntentView(APIView):
             Respond ONLY with a JSON object:
             {{"action": "target_code_or_error_invalid_command", "message": "reasoning or feedback"}}
             """
-            
+
             response = None
             max_retries = 3
             for attempt in range(max_retries):
@@ -608,11 +601,11 @@ class DynamicVoiceAIIntentView(APIView):
                         time.sleep(1.5)
                         continue
                     raise api_err
-            
+
             clean_text = response.text.replace("```json", "").replace("```", "").strip()
             result_json = json.loads(clean_text)
             return Response(result_json)
-            
+
         except Exception as e:
             error_str = str(e)
             if "503" in error_str or "UNAVAILABLE" in error_str:
@@ -622,7 +615,7 @@ class DynamicVoiceAIIntentView(APIView):
                     return Response({"action": "open_customizer", "message": "Fallback: Opened via Local Rules"})
                 elif "सर्च" in spoken_text or "search" in spoken_text:
                     return Response({"action": "open_search", "message": "Fallback: Opened via Local Rules"})
-            
+
             return Response({"action": "error_invalid_command", "message": f"AI Engine Error: {error_str}"}, status=500)
 
 
@@ -678,8 +671,8 @@ class UniversalLoginAPIView(APIView):
             return Response({"error": "Please provide your identifier and password."}, status=400)
 
         user_obj = User.objects.filter(
-            Q(username=identifier) | 
-            Q(email=identifier) | 
+            Q(username=identifier) |
+            Q(email=identifier) |
             Q(profile__mobile_number=identifier)
         ).first()
 
@@ -708,8 +701,8 @@ class UniversalForgotPasswordAPIView(APIView):
             return Response({"error": "Please provide your username, email, or mobile number."}, status=400)
 
         user = User.objects.filter(
-            Q(username__iexact=identifier) | 
-            Q(email__iexact=identifier) | 
+            Q(username__iexact=identifier) |
+            Q(email__iexact=identifier) |
             Q(profile__mobile_number=identifier)
         ).first()
 
@@ -725,8 +718,10 @@ class UniversalForgotPasswordAPIView(APIView):
                     else:
                         method_used = f"Email Address ({target_email})"
 
-                    reset_link = f"http://localhost:3000/reset-password?user={user.username}"
-                    
+                    scheme = 'https' if request.is_secure() else 'http'
+                    base_url = f"{scheme}://{request.get_host()}"
+                    reset_link = f"{base_url}/reset-password?user={user.username}"
+
                     send_professional_password_reset_email(target_email, user.username, method_used, reset_link)
                 except Exception as mail_err:
                     print("Mail sending failed:", mail_err)
@@ -765,30 +760,35 @@ class ResetPasswordAPIView(APIView):
 
 class GoogleOAuthOnboardingView(APIView):
     permission_classes = [AllowAny]
-    
+
     def post(self, request):
         """
         Google लॉगिन/साइन-अप को हैंडल करता है।
-        अगर यूजर नया है, तो Google डेटा के साथ ऑनबोर्डिंग (Organization Name, Unique Username, Mobile) मांगता है।
-        अगर पुराना है, तो सीधे सक्सेसफुल लॉगिन टोकन/डेटा देता है।
+        - सबडोमेन या कस्टम डोमेन (request.tenant) को पहचानता है।
+        - अगर यूजर नया है, तो Google डेटा के साथ ऑनबोर्डिंग मांगता है।
+        - अगर पुराना है, तो सीधे सक्सेसफुल लॉगिन डेटा देता है।
         """
         try:
             data = request.data
             email = data.get('email')
             first_name = data.get('first_name', '')
             last_name = data.get('last_name', '')
-            
+
             if not email:
                 return Response({"error": "Email is required from Google Auth."}, status=400)
-                
+
+            current_tenant = getattr(request, 'tenant', None)
             user = User.objects.filter(email__iexact=email).first()
-            
+
             if user:
-                # 🟢 Existing User -> Direct Login
-                profile = getattr(user, 'profile', None)
+                profile, _ = UserProfile.objects.get_or_create(user=user)
+                if current_tenant and not profile.tenant:
+                    profile.tenant = current_tenant
+                    profile.save()
+
                 is_completed = profile.is_profile_completed if profile else True
                 role = profile.role if profile else 'customer'
-                
+
                 return Response({
                     "status": "success",
                     "action": "login",
@@ -796,10 +796,10 @@ class GoogleOAuthOnboardingView(APIView):
                     "username": user.username,
                     "email": user.email,
                     "role": role,
+                    "tenant": current_tenant.name if current_tenant else "Master",
                     "is_profile_completed": is_completed
                 })
             else:
-                # 🟡 New User -> Require Onboarding (Organization Name, Unique Username, Mobile)
                 return Response({
                     "status": "success",
                     "action": "onboarding_required",
@@ -807,7 +807,8 @@ class GoogleOAuthOnboardingView(APIView):
                     "prefilled_data": {
                         "email": email,
                         "first_name": first_name,
-                        "last_name": last_name
+                        "last_name": last_name,
+                        "detected_tenant": current_tenant.name if current_tenant else None
                     }
                 })
         except Exception as e:
@@ -816,66 +817,70 @@ class GoogleOAuthOnboardingView(APIView):
 
 class CompleteGoogleSignupView(APIView):
     permission_classes = [AllowAny]
-    
+
     def post(self, request):
         """
-        Google से आए नए यूजर द्वारा Organization Name, Unique Username और Mobile भरने के बाद अकाउंट क्रिएट करता है।
+        Google से आए नए यूजर द्वारा Organization Name, Unique Username और Mobile भरने के बाद अकाउंट क्रिएट करता है (Atomic Transaction के साथ)।
         """
         try:
             data = request.data
             email = data.get('email')
             first_name = data.get('first_name', '')
             last_name = data.get('last_name', '')
-            username = data.get('username') # Unique Username
-            organization_name = data.get('organization_name') # Unified term (instead of firm name)
+            username = data.get('username')
+            organization_name = data.get('organization_name')
             mobile_number = data.get('mobile_number', '')
-            
+
             if not email or not username or not organization_name:
                 return Response({"error": "Email, Unique Username, and Organization Name are mandatory."}, status=400)
-                
-            # Check for unique username and email availability
+
             if User.objects.filter(Q(username__iexact=username) | Q(email__iexact=email)).exists():
                 return Response({"error": "Username or Email is already taken. Please choose a unique username."}, status=400)
-                
-            # Random secure password for OAuth users (they login via Google anyway)
-            temp_password = secrets.token_urlsafe(16)
-            
-            user = User.objects.create_user(
-                username=username, 
-                email=email, 
-                password=temp_password, 
-                first_name=first_name,
-                last_name=last_name
-            )
-            
-            UserProfile.objects.update_or_create(
-                user=user,
-                defaults={
-                    'role': 'customer',
-                    'organization_name': organization_name,
-                    'mobile_number': mobile_number,
-                    'is_mobile_verified': True,
-                    'is_profile_completed': True
-                }
-            )
-            
-            # Send professional welcome email
-            send_professional_welcome_email(user, organization_name)
-            
+
+            current_tenant = getattr(request, 'tenant', None)
+            scheme = 'https' if request.is_secure() else 'http'
+            base_url = f"{scheme}://{request.get_host()}"
+
+            with transaction.atomic():
+                temp_password = secrets.token_urlsafe(16)
+
+                user = User.objects.create_user(
+                    username=username,
+                    email=email,
+                    password=temp_password,
+                    first_name=first_name,
+                    last_name=last_name
+                )
+
+                UserProfile.objects.update_or_create(
+                    user=user,
+                    defaults={
+                        'role': 'customer',
+                        'organization_name': organization_name,
+                        'mobile_number': mobile_number,
+                        'tenant': current_tenant,
+                        'is_mobile_verified': True,
+                        'is_profile_completed': True
+                    }
+                )
+
+                if user:
+                    send_professional_welcome_email(user, organization_name, base_url=base_url)
+
             return Response({
                 "status": "success",
                 "message": "Account successfully created via Google!",
                 "username": user.username,
                 "role": "customer"
             })
-            
+
         except Exception as e:
             return Response({"error": str(e)}, status=500)
 
 
 class HardwarePasskeyAuthView(APIView):
     permission_classes = [AllowAny]
-    
+
     def post(self, request):
         """
         Hardware Passkey / Biometric लॉगिन और साइन-अप को मैनेज करता है।
@@ -883,24 +888,24 @@ class HardwarePasskeyAuthView(APIView):
         """
         try:
             data = request.data
-            identifier = data.get('identifier') # Unique Username or Email
+            identifier = data.get('identifier')
             passkey_credential_id = data.get('credential_id')
-            
+
             if not identifier:
                 return Response({"error": "Unique Username or Email is required for Passkey authentication."}, status=400)
-                
+
             user = User.objects.filter(Q(username__iexact=identifier) | Q(email__iexact=identifier)).first()
-            
+            current_tenant = getattr(request, 'tenant', None)
+
             if user:
-                # Existing User login via Passkey
                 return Response({
                     "status": "success",
                     "action": "login",
                     "message": "Passkey verified successfully.",
-                    "username": user.username
+                    "username": user.username,
+                    "tenant": current_tenant.name if current_tenant else "Master"
                 })
             else:
-                # New User wanting to register via Passkey
                 return Response({
                     "status": "success",
                     "action": "onboarding_required",
