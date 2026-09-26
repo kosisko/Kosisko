@@ -33,7 +33,7 @@ class GlobalTenantMiddleware:
                     pass
 
         # 3. Subdomain Resolution (सबडोमेन पहचानें - e.g. tata.kosisko.com)
-        if not request.tenant and len(parts) >= 3:
+        if not request.tenant and len(parts) >= 3 and not parts[0].isdigit():
             subdomain = parts[0]
             # 'www', 'admin', 'api', 'app' जैसे सिस्टम राउट्स को छोड़कर बाकी को टेनेंट मानें
             if subdomain not in ['www', 'admin', 'api', 'app']:

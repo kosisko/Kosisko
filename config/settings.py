@@ -1,6 +1,6 @@
 """
 Django settings for config project.
-Kosisko Prime SaaS Architecture Configuration
+Kosisko Prime SaaS Architecture Configuration (Pure Production)
 """
 
 from pathlib import Path
@@ -10,18 +10,19 @@ from decouple import config
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'django-insecure-4aq5%q_%ayxyesqop*#3%5t*y=)p*y1eti%(_!%*t4)p1q9u1-'
+# Security & Environment Config
+SECRET_KEY = config('SECRET_KEY')
 
-DEBUG = True
+DEBUG = config('DEBUG', default=False, cast=bool)
 
-# सब-डोमेन परीक्षण (e.g. tata.localhost) और भविष्य के डोमेन के लिए
-ALLOWED_HOSTS = ['kosisko.com', '.kosisko.com', 'localhost', '127.0.0.1', '*']
+# Pure Production: Only official domain and all multi-tenant subdomains
+ALLOWED_HOSTS = ['kosisko.com', '.kosisko.com', '*']
 
 
 # Application definition
 
 INSTALLED_APPS = [
-    'jazzmin',  # इसे यहाँ सबसे ऊपर जोड़ें
+    'jazzmin',  # Must be before django.contrib.admin
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -30,14 +31,15 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     # Third Party Packages
-    'channels',         # 👈 WebSockets Streaming Engine
+    'channels',         # WebSockets Streaming Engine
     'rest_framework',
-    'corsheaders',      # 👈 Next.js Frontend Connection Support
+    'rest_framework.authtoken',
+    'corsheaders',      # Next.js Frontend Connection Support
 
     # Core SaaS Infrastructure Apps
     'tenants',
     'core',
-    'core_platform',    # 👈 Global Master Architecture Engine
+    'core_platform',    # Global Master Architecture Engine
     'api',
     'marketplace',
     'ai_engine',
@@ -50,14 +52,14 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
-    'corsheaders.middleware.CorsMiddleware',  # 👈 MUST BE RIGHT AFTER SECURITY MIDDLEWARE
+    'corsheaders.middleware.CorsMiddleware',  # MUST BE RIGHT AFTER SECURITY MIDDLEWARE
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    
+
     # Kosisko Multi-Tenant Detection Middleware
     'core_platform.middleware.GlobalTenantMiddleware',
 ]
@@ -66,7 +68,7 @@ ROOT_URLCONF = 'config.urls'
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',  # 👈 'backends.django.DjangoTemplates'
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
         'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
@@ -75,7 +77,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
-                
+
                 # Kosisko SaaS Dynamic Theme & App Context
                 'tenants.context_processors.tenant_context',
             ],
@@ -84,15 +86,10 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
-ASGI_APPLICATION = 'config.asgi.application'  # 👈 WebSockets Routing Config
+ASGI_APPLICATION = 'config.asgi.application'  # WebSockets Routing Config
 
 
-# CORS Setup for Next.js Frontend (Port 3000)
-CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_CREDENTIALS = True
-
-
-# Channel Layer for Zero-Latency WebSockets (In-Memory for Dev)
+# Channel Layer for Zero-Latency WebSockets
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels.layers.InMemoryChannelLayer",
@@ -138,9 +135,10 @@ USE_TZ = True
 
 
 # Static and Media Files Configuration
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
@@ -151,15 +149,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Default Login URL Redirect
 LOGIN_URL = '/admin/login/'
 LOGIN_REDIRECT_URL = '/iot/customer/dashboard/'
-
-
-#EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-#EMAIL_HOST = 'smtp.gmail.com'
-#EMAIL_PORT = 587
-#EMAIL_USE_TLS = True
-#EMAIL_HOST_USER = 'kosisko.com@gmail.com'         # यहाँ अपनी असली जीमेल आईडी डालें
-#EMAIL_HOST_PASSWORD = 'mfvysjcubabjkcnj'     # यहाँ वह 16 अंकों का ऐप पासवर्ड डालें (बिना स्पेस के)
-#DEFAULT_FROM_EMAIL = 'Kosisko Secure <kosisko.com@gmail.com>'
 
 
 # 🌟 Django REST Framework Global Security & Permission Settings
@@ -173,38 +162,43 @@ REST_FRAMEWORK = {
     ]
 }
 
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-
 
 # ==========================================
-# AWS MAIL MANAGER SMTP CONFIGURATION
+# AWS MAIL MANAGER SMTP CONFIGURATION (100% Inbox Delivery)
 # ==========================================
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'qqbhjcpqapnh.hkph.mail-manager-smtp.amazonaws.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'inp-abf4ke5jozwe5ynkrhctyiab'
-EMAIL_HOST_PASSWORD = 'V@arpit132'
-DEFAULT_FROM_EMAIL = 'kosiskoventures@gmail.com'
+EMAIL_HOST = config('EMAIL_HOST')
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+EMAIL_USE_SSL = config('EMAIL_USE_SSL', default=False, cast=bool)
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
+
+# 🌟 Official Enterprise From-Address (Fixes Spam & DMARC Failures)
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='Kosisko Security ')
+SERVER_EMAIL = config('SERVER_EMAIL', default='no-reply@kosisko.com')
 
 
-
+# ==========================================
+# PURE PRODUCTION CORS, CSRF & SESSION SETTINGS
+# ==========================================
 CSRF_TRUSTED_ORIGINS = [
     "https://kosisko.com",
     "https://*.kosisko.com",
 ]
 
-
+# Next.js Frontend Connection Support for Kosisko Domain & Subdomains
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://([a-zA-Z0-9-]+\.)?kosisko\.com$",
+]
 CORS_ALLOWED_ORIGINS = [
     "https://kosisko.com",
     "https://www.kosisko.com",
 ]
 
-
-# कुकीज़ को मुख्य डोमेन और सभी सबडोमेन पर साझा करने के लिए
-SESSION_COOKIE_DOMAIN = '.kosisko.com' # (डेवलपमेंट के दौरान इसे None या छोड़ सकते हैं)
-SESSION_COOKIE_HTTPONLY = True          # जावास्क्रिप्ट से सुरक्षित (XSS से बचाव)
-SESSION_COOKIE_SECURE = True            # केवल HTTPS पर काम करे (प्रोडक्शन के लिए)
+# Cross-Subdomain Session Sharing
+SESSION_COOKIE_DOMAIN = '.kosisko.com'
+SESSION_COOKIE_HTTPONLY = True          # JavaScript Protection (XSS Prevention)
+SESSION_COOKIE_SECURE = True            # HTTPS Only
 SESSION_COOKIE_SAMESITE = 'Lax'
-CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_CREDENTIALS = True

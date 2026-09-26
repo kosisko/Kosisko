@@ -154,7 +154,7 @@ class UserProfile(models.Model):
 
     # Contact & Personal Details
     organization_name = models.CharField(max_length=255, blank=True, null=True)
-    mobile_number = models.CharField(max_length=15, blank=True, null=True, db_index=True)
+    mobile_number = models.CharField(max_length=15, blank=True, null=True, unique=True, db_index=True)
     is_mobile_verified = models.BooleanField(default=False)
     is_profile_completed = models.BooleanField(default=False)
 

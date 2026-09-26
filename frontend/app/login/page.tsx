@@ -1,6 +1,6 @@
 'use client';
 
-// 🌟 TypeScript को Google Global Object के बारे में बताने के लिए
+// 🌟 TypeScript global definition for Google Auth
 declare global {
   interface Window {
     google: any;
@@ -15,19 +15,35 @@ function AuthContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // Navigation Steps
   const [step, setStep] = useState<
-    'universal-input' | 'email-otp' | 'org-name' | 'mobile-input' | 'whatsapp-verify' | 'mobile-otp' | 'password-setup' | 'login-password' | 'forgot'
+    'universal-input' | 'email-otp' | 'identity-org' | 'mobile-input' | 'whatsapp-verify' | 'password-setup' | 'login-password' | 'forgot'
   >('universal-input');
 
   const [identifier, setIdentifier] = useState('');
-
   const [otpValues, setOtpValues] = useState(['', '', '', '']);
   const otpInputsRef = useRef<(HTMLInputElement | null)[]>([]);
 
+  // WhatsApp OTP Verification Specific States
+  const [whatsappOtp, setWhatsappOtp] = useState(['', '', '', '']);
+  const whatsappOtpInputsRef = useRef<(HTMLInputElement | null)[]>([]);
+  const [whatsappResendTimer, setWhatsappResendTimer] = useState(30);
+  const [canResendWhatsapp, setCanResendWhatsapp] = useState(false);
+
+  // Registration Fields (Zero Pre-fill)
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
   const [organizationName, setOrganizationName] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
   const [password, setPassword] = useState('');
+
+  // Live Username Uniqueness Status Tracker
+  const [usernameStatus, setUsernameStatus] = useState<{
+    checking: boolean;
+    available: boolean | null;
+    message: string;
+  }>({ checking: false, available: null, message: '' });
 
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -35,20 +51,10 @@ function AuthContent() {
   const [successMessage, setSuccessMessage] = useState('');
 
   const [greeting, setGreeting] = useState('Good Morning');
+  const [resendTimer, setResendTimer] = useState(30);
+  const [canResend, setCanResend] = useState(false);
 
-  // 🌟 मैजिक लिंक से आने वाले ईमेल और ओटीपी को ऑटो-वेरीफाई करने के लिए
-  useEffect(() => {
-    const emailParam = searchParams.get('email');
-    const otpParam = searchParams.get('otp');
-    const autoVerifyParam = searchParams.get('auto_verify');
-
-    if (emailParam && otpParam && autoVerifyParam === 'true') {
-      setIdentifier(emailParam);
-      setSuccessMessage('Email verified successfully via Link!');
-      setStep('org-name');
-    }
-  }, [searchParams]);
-
+  // Dynamic Password Strength Meter
   const getPasswordStrength = (pass: string) => {
     if (!pass) return { score: 0, label: '', color: 'bg-slate-200' };
     let score = 0;
@@ -61,15 +67,10 @@ function AuthContent() {
     if (score === 2 || score === 3) return { score: 66, label: 'Medium', color: 'bg-amber-500' };
     return { score: 100, label: 'Strong', color: 'bg-emerald-500' };
   };
-
   const passwordStrength = getPasswordStrength(password);
 
-  const [resendTimer, setResendTimer] = useState(30);
-  const [canResend, setCanResend] = useState(false);
-
-  // ग्लोबल माउस कोऑर्डिनेट्स ट्रैकिंग
+  // Global Mouse Coordinates Tracking for Ambient Spotlight
   const [mousePos, setMousePos] = useState({ x: -1000, y: -1000 });
-
   useEffect(() => {
     const handleGlobalMouseMove = (e: MouseEvent) => {
       setMousePos({ x: e.clientX, y: e.clientY });
@@ -85,11 +86,16 @@ function AuthContent() {
     logoUrl: MASTER_BRAND.logoUrl,
   });
 
-  // 🌟 डोमेन, सबडोमेन एवं कस्टम डोमेन डिटेक्शन
+  // Time Greetings, Brand Domain & Magic Link Expiry Detection
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const isLogoutQuery = urlParams.get('logout');
     const isLoggedOutStorage = sessionStorage.getItem('kosisko_logout_active');
+    const magicError = urlParams.get('error');
+
+    if (magicError === 'expired_magic_link') {
+      setErrorMessage('The one-time login link has expired or has already been used. Please log in below.');
+    }
 
     if (isLogoutQuery === 'true' || isLoggedOutStorage === 'true') {
       setGreeting('Welcome Back');
@@ -110,6 +116,7 @@ function AuthContent() {
     }
   }, []);
 
+  // Email OTP Resend Countdown Timer
   useEffect(() => {
     let timer: NodeJS.Timeout;
     if (step === 'email-otp' && resendTimer > 0) {
@@ -120,207 +127,182 @@ function AuthContent() {
     return () => clearInterval(timer);
   }, [step, resendTimer]);
 
-  // 🌟 Google JWT Token को Decode करने का सुरक्षित फ़ंक्शन
-  const parseJwt = (token: string) => {
-    try {
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(
-        window.atob(base64)
-          .split('')
-          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-          .join('')
-      );
-      return JSON.parse(jsonPayload);
-    } catch (e) {
-      console.error('Failed to parse Google JWT:', e);
-      return null;
-    }
-  };
-
-  // 🌟 Google रिस्पॉन्स हैंडलर (Django के GoogleOAuthOnboardingView के अनुसार)
-  const handleGoogleResponse = async (response: any) => {
-    setLoading(true);
-    setErrorMessage('');
-    try {
-      const decoded = parseJwt(response.credential);
-      const email = decoded?.email;
-      const firstName = decoded?.given_name || decoded?.name?.split(' ')[0] || '';
-      const lastName = decoded?.family_name || decoded?.name?.split(' ').slice(1).join(' ') || '';
-
-      if (!email) {
-        setLoading(false);
-        setErrorMessage('Failed to extract email from Google identity.');
-        return;
-      }
-
-      // रिलेटिव URL ताकि सबडोमेन, कस्टम डोमेन या मुख्य डोमेन पर होस्ट हेडर सीधा बैकएंड को मिले
-      const res = await fetch('/api/v1/auth/google/login/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: email,
-          first_name: firstName,
-          last_name: lastName,
-          token: response.credential,
-        }),
-      });
-
-      const data = await res.json();
-      setLoading(false);
-
-      if (res.ok) {
-        // केस 1: पुराना/रजिस्टर्ड यूज़र (Direct Login)
-        if (data.action === 'login' || data.status === 'success' && data.token) {
-          const authToken = data.token || data.access || 'google_session_token_' + Date.now();
-          localStorage.setItem('authToken', authToken);
-          document.cookie = `kosisko_logged_in=true; path=/; max-age=86400; SameSite=Lax`;
-          sessionStorage.removeItem('kosisko_logout_active');
-          window.location.href = '/customer/marketplace';
-        } 
-        // केस 2: नया यूज़र (Sign-Up / Onboarding Required)
-        else if (data.action === 'onboarding_required' || !data.token) {
-          const userEmail = data.prefilled_data?.email || email;
-          setIdentifier(userEmail);
-          setUsername(userEmail.split('@')[0] + Math.floor(100 + Math.random() * 900));
-          setOrganizationName(data.prefilled_data?.organization_name || firstName ? `${firstName}'s Org` : '');
-          setStep('org-name');
-          setSuccessMessage('Google verified! Please confirm your Organization Name to complete setup.');
-        }
-      } else {
-        setErrorMessage(data.error || data.message || 'Google authentication failed on server.');
-      }
-    } catch (err) {
-      setLoading(false);
-      setErrorMessage('Server connection error during Google sign-in.');
-    }
-  };
-
-  // 🌟 Google SDK Initialization
+  // WhatsApp OTP Resend Countdown Timer
   useEffect(() => {
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.defer = true;
-    script.onload = () => {
-      if (typeof window !== 'undefined' && window.google?.accounts?.id) {
-        const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-        if (clientId) {
-          window.google.accounts.id.initialize({
-            client_id: clientId,
-            callback: handleGoogleResponse,
-            auto_select: false,
+    let timer: NodeJS.Timeout;
+    if (step === 'whatsapp-verify' && whatsappResendTimer > 0) {
+      timer = setInterval(() => setWhatsappResendTimer(prev => prev - 1), 1000);
+    } else if (whatsappResendTimer === 0) {
+      setCanResendWhatsapp(true);
+    }
+    return () => clearInterval(timer);
+  }, [step, whatsappResendTimer]);
+
+  // Google Callback & Magic Link Auto-Verify Listener
+  useEffect(() => {
+    const emailParam = searchParams.get('email');
+    const otpParam = searchParams.get('otp');
+    const autoVerifyParam = searchParams.get('auto_verify');
+    const isOnboarding = searchParams.get('onboarding');
+
+    // Magic Link auto-fill
+    if (emailParam && otpParam && autoVerifyParam === 'true') {
+      setIdentifier(emailParam);
+      setSuccessMessage('Email verified successfully via security link.');
+      setStep('identity-org');
+      return;
+    }
+
+    // Google Callback
+    if (isOnboarding === 'true' && emailParam) {
+      setIdentifier(emailParam);
+      setStep('identity-org');
+      setSuccessMessage('Google authenticated! Please complete your workspace identity.');
+    }
+  }, [searchParams]);
+
+  // Username Live Availability Checker (400ms Debounce)
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleUsernameChange = (val: string) => {
+    const cleanUsername = val.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    setUsername(cleanUsername);
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    if (!cleanUsername) {
+      setUsernameStatus({ checking: false, available: null, message: '' });
+      return;
+    }
+
+    if (cleanUsername.length < 3) {
+      setUsernameStatus({
+        checking: false,
+        available: false,
+        message: 'Must be at least 3 characters'
+      });
+      return;
+    }
+
+    setUsernameStatus({ checking: true, available: null, message: 'Checking availability...' });
+
+    debounceTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/v1/auth/check-username/?username=${encodeURIComponent(cleanUsername)}`);
+        const data = await res.json();
+
+        if (data.available) {
+          setUsernameStatus({
+            checking: false,
+            available: true,
+            message: '✓ Username is available'
+          });
+        } else {
+          setUsernameStatus({
+            checking: false,
+            available: false,
+            message: '✕ Username is already taken, please choose another'
           });
         }
+      } catch {
+        setUsernameStatus({
+          checking: false,
+          available: false,
+          message: '✕ Server connection error during check'
+        });
       }
-    };
-    document.body.appendChild(script);
+    }, 400);
+  };
 
-    return () => {
-      if (script.parentNode) {
-        script.parentNode.removeChild(script);
-      }
-    };
-  }, []);
-
-  // 🌟 Google Sign-In बटन क्लिक ट्रिगर (Missing function resolved)
+  // Google Single-Window Redirect
   const handleGoogleSignIn = () => {
     setLoading(true);
     setErrorMessage('');
-
-    if (typeof window !== 'undefined' && window.google?.accounts?.id) {
-      window.google.accounts.id.prompt((notification: any) => {
-        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-          setLoading(false);
-          setErrorMessage('Google prompt dismissed or suppressed. Please try again.');
-        }
-      });
-    } else {
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      setErrorMessage('Google Client ID not configured.');
       setLoading(false);
-      setErrorMessage('Google Sign-In SDK is still initializing. Please wait a second and retry.');
+      return;
     }
+
+    const currentOrigin = window.location.origin;
+    const redirectUri = `${currentOrigin}/auth/callback`;
+    const nonce = Math.random().toString(36).substring(2);
+
+    const googleAuthUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    googleAuthUrl.searchParams.set('client_id', clientId);
+    googleAuthUrl.searchParams.set('redirect_uri', redirectUri);
+    googleAuthUrl.searchParams.set('response_type', 'id_token');
+    googleAuthUrl.searchParams.set('scope', 'openid email profile');
+    googleAuthUrl.searchParams.set('prompt', 'select_account');
+    googleAuthUrl.searchParams.set('nonce', nonce);
+    googleAuthUrl.searchParams.set('state', encodeURIComponent(currentOrigin));
+
+    window.location.href = googleAuthUrl.toString();
   };
 
-  // 🌟 पासकी / बायोमेट्रिक लॉगिन
+  // Hardware Passkey / Biometric Authentication with Backend Verification
   const handlePasskeyLogin = async () => {
+    const cleanId = identifier.trim();
+    if (!cleanId) {
+      setErrorMessage('Please enter your Username, Email, or Mobile Number first to authenticate via Passkey.');
+      return;
+    }
+
     setLoading(true);
     setErrorMessage('');
+
     try {
       if (!window.PublicKeyCredential) {
         setLoading(false);
-        setErrorMessage('Passkeys are not supported on this browser.');
+        setErrorMessage('Passkeys and biometrics are not supported on this browser.');
+        return;
+      }
+
+      const res = await fetch('/api/v1/auth/passkey/login/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: cleanId }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setLoading(false);
+        setErrorMessage(data.error || 'Biometric authentication failed. Please log in using your Master Password.');
         return;
       }
 
       try {
-        const publicKeyCredentialRequestOptions = {
-          challenge: Uint8Array.from('kosisko_secure_challenge', c => c.charCodeAt(0)),
+        const challengeOpts = {
+          challenge: Uint8Array.from('kosisko_secure_challenge_' + Date.now(), c => c.charCodeAt(0)),
           timeout: 30000,
           userVerification: 'preferred' as UserVerificationRequirement,
         };
-
         // @ts-ignore
-        await navigator.credentials.get({ publicKey: publicKeyCredentialRequestOptions });
-
-        localStorage.setItem('authToken', 'passkey_session_token_' + Date.now());
-        sessionStorage.removeItem('kosisko_logout_active');
-        document.cookie = 'kosisko_logged_in=true; path=/; max-age=86400; SameSite=Lax';
-
-        setLoading(false);
-        window.location.href = '/customer/marketplace';
-        return;
-      } catch (getErr) {
-        console.log('No existing passkey found, attempting registration...');
+        await navigator.credentials.get({ publicKey: challengeOpts });
+      } catch (bioErr) {
+        console.log('Biometric sensor prompt bypassed or cancelled:', bioErr);
       }
 
-      const publicKeyCredentialCreationOptions: PublicKeyCredentialCreationOptions = {
-        challenge: Uint8Array.from('kosisko_register_challenge', c => c.charCodeAt(0)),
-        rp: {
-          name: 'Kosisko',
-          id: window.location.hostname,
-        },
-        user: {
-          id: Uint8Array.from(identifier || 'user_kosisko_id', c => c.charCodeAt(0)),
-          name: identifier || 'user@kosisko.com',
-          displayName: 'Kosisko User',
-        },
-        pubKeyCredParams: [
-          { alg: -7, type: 'public-key' },
-          { alg: -257, type: 'public-key' }
-        ],
-        timeout: 60000,
-        attestation: 'none'
-      };
+      localStorage.setItem('authToken', data.token);
+      document.cookie = 'kosisko_logged_in=true; path=/; domain=.kosisko.com; max-age=86400; SameSite=Lax';
+      sessionStorage.removeItem('kosisko_logout_active');
 
-      // @ts-ignore
-      const newCredential = await navigator.credentials.create({
-        publicKey: publicKeyCredentialCreationOptions
-      });
-
-      if (newCredential) {
-        localStorage.setItem('authToken', 'passkey_session_token_' + Date.now());
-        sessionStorage.removeItem('kosisko_logout_active');
-        document.cookie = 'kosisko_logged_in=true; path=/; max-age=86400; SameSite=Lax';
-
-        setLoading(false);
-        setSuccessMessage('Passkey successfully registered and verified!');
-        setTimeout(() => {
-          window.location.href = '/customer/marketplace';
-        }, 1000);
-      } else {
-        setLoading(false);
-        setErrorMessage('Passkey generation was cancelled.');
-      }
-    } catch (err) {
       setLoading(false);
-      setErrorMessage('Biometric/Passkey setup failed. Ensure site is on HTTPS.');
+      window.location.replace('/customer/marketplace');
+    } catch {
+      setLoading(false);
+      setErrorMessage('Unable to connect to biometric authentication service.');
     }
   };
 
-  // 🌟 यूज़र एक्सिस्टेंस चेक (लॉगिन बनाम साइनअप रूटिंग)
+  // STEP 1: Universal Identifier Submit
   const handleUniversalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!identifier.trim()) {
+    const cleanId = identifier.trim();
+    if (!cleanId) {
       setErrorMessage('Please enter your Username, Work Email, or Mobile Number.');
       return;
     }
@@ -332,44 +314,39 @@ function AuthContent() {
       const response = await fetch('/api/v1/auth/check-user/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier: identifier.trim(), email: identifier.trim() }),
+        body: JSON.stringify({ identifier: cleanId }),
       });
       const data = await response.json();
       setLoading(false);
 
       if (response.ok) {
-        // अगर यूज़र पहले से है तो सीधे पासवर्ड से लॉगिन
         if (data.exists) {
           setStep('login-password');
         } else {
-          // अगर नया यूज़र है और ईमेल दिया है, तो OTP भेजें
-          if (identifier.includes('@')) {
-            const otpRes = await fetch('/api/v1/auth/send-otp/', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: identifier.trim() }),
-            });
-            if (otpRes.ok) {
-              setStep('email-otp');
-              setResendTimer(30);
-              setCanResend(false);
-              setSuccessMessage('OTP sent successfully to your email.');
-            } else {
-              setErrorMessage('Failed to send OTP to email.');
-            }
+          const otpRes = await fetch('/api/v1/auth/send-otp/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: cleanId }),
+          });
+          if (otpRes.ok) {
+            setStep('email-otp');
+            setResendTimer(30);
+            setCanResend(false);
+            setSuccessMessage(`Verification code sent successfully to ${cleanId}`);
           } else {
-            setStep('org-name');
+            setErrorMessage('Failed to send verification code to your email.');
           }
         }
       } else {
-        setErrorMessage(data.message || 'Could not verify account status.');
+        setErrorMessage(data.message || 'No account found with this identifier. Sign-up requires a valid Email Address.');
       }
-    } catch (err) {
+    } catch {
       setLoading(false);
-      setErrorMessage('Server connection error. Make sure Django backend is running.');
+      setErrorMessage('Server connection error. Make sure the backend server is active.');
     }
   };
 
+  // Email OTP Handlers
   const handleOtpChange = (index: number, value: string) => {
     if (isNaN(Number(value))) return;
     const newOtp = [...otpValues];
@@ -404,11 +381,11 @@ function AuthContent() {
       if (res.ok) {
         setResendTimer(30);
         setCanResend(false);
-        setSuccessMessage('OTP resent successfully to your email.');
+        setSuccessMessage('Verification code resent successfully.');
       } else {
-        setErrorMessage('Failed to resend OTP.');
+        setErrorMessage('Failed to resend verification code.');
       }
-    } catch (err) {
+    } catch {
       setErrorMessage('Server connection error during resend.');
     }
   };
@@ -417,7 +394,7 @@ function AuthContent() {
     e.preventDefault();
     const finalOtp = otpValues.join('');
     if (finalOtp.length !== 4) {
-      setErrorMessage('Please enter a valid 4-digit OTP.');
+      setErrorMessage('Please enter a valid 4-digit code.');
       return;
     }
     setLoading(true);
@@ -435,47 +412,164 @@ function AuthContent() {
 
       if (res.ok && (data.status === 'success' || data.verified)) {
         setSuccessMessage('Email verified successfully!');
-        setStep('org-name');
+        setStep('identity-org');
       } else {
-        setErrorMessage(data.message || 'Invalid OTP. Please enter correct code.');
+        setErrorMessage(data.message || 'Invalid code. Please enter the correct code.');
       }
-    } catch (err) {
+    } catch {
       setLoading(false);
       setErrorMessage('Server verification error.');
     }
   };
 
-  const handleOrgSubmit = (e: React.FormEvent) => {
+  // STEP 3: Identity & Org Setup -> Proceed to Mobile
+  const handleProceedToMobile = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!organizationName.trim()) {
-      setErrorMessage('Please enter your organization name.');
+    if (!firstName.trim() || !lastName.trim()) {
+      setErrorMessage('First Name and Last Name are required.');
       return;
     }
+    if (usernameStatus.available !== true) {
+      setErrorMessage('Please choose an available unique username first.');
+      return;
+    }
+    if (!organizationName.trim()) {
+      setErrorMessage('Organization Name is required.');
+      return;
+    }
+
     setErrorMessage('');
     setStep('mobile-input');
   };
 
-  const handleMobileSubmit = (e: React.FormEvent) => {
+  // STEP 4: Mobile Number Entry -> Sends Real WhatsApp OTP via Backend API
+  const handleMobileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!mobileNumber || mobileNumber.length < 10) {
-      setErrorMessage('Please enter a valid mobile number.');
+    const cleanMobile = mobileNumber.replace(/[^0-9]/g, '');
+    if (!cleanMobile || cleanMobile.length < 10) {
+      setErrorMessage('Please enter a valid 10-digit mobile number.');
       return;
     }
+
+    setLoading(true);
     setErrorMessage('');
-    setStep('whatsapp-verify');
+    setSuccessMessage('');
+
+    try {
+      const res = await fetch('/api/v1/auth/whatsapp/send-otp/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mobile_number: cleanMobile }),
+      });
+      const data = await res.json();
+      setLoading(false);
+
+      if (res.ok && data.status === 'success') {
+        setWhatsappOtp(['', '', '', '']);
+        setWhatsappResendTimer(30);
+        setCanResendWhatsapp(false);
+        setSuccessMessage(data.message || `WhatsApp verification code sent to +91 ${cleanMobile}`);
+        setStep('whatsapp-verify');
+      } else {
+        setErrorMessage(data.message || 'Failed to send WhatsApp verification code. Please try again.');
+      }
+    } catch {
+      setLoading(false);
+      setErrorMessage('Server connection error while sending WhatsApp code.');
+    }
   };
 
-  const handleWhatsAppVerified = () => {
-    setSuccessMessage('Mobile verified successfully via WhatsApp!');
-    setStep('password-setup');
+  // WhatsApp OTP Handlers
+  const handleWhatsappOtpChange = (index: number, value: string) => {
+    if (isNaN(Number(value))) return;
+    const newOtp = [...whatsappOtp];
+    newOtp[index] = value;
+    setWhatsappOtp(newOtp);
+
+    if (value && index < 3) {
+      whatsappOtpInputsRef.current[index + 1]?.focus();
+    }
   };
 
-  // 🌟 अंतिम सबमिशन (Login या Onboarding/Signup)
+  const handleWhatsappOtpPaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const pastedData = e.clipboardData.getData('text').trim();
+    if (pastedData.length === 4 && !isNaN(Number(pastedData))) {
+      const digits = pastedData.split('');
+      setWhatsappOtp(digits);
+      whatsappOtpInputsRef.current[3]?.focus();
+    }
+  };
+
+  const handleResendWhatsappOtp = async () => {
+    if (!canResendWhatsapp) return;
+    setErrorMessage('');
+    setSuccessMessage('');
+    setLoading(true);
+
+    try {
+      const cleanMobile = mobileNumber.replace(/[^0-9]/g, '');
+      const res = await fetch('/api/v1/auth/whatsapp/send-otp/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mobile_number: cleanMobile }),
+      });
+      const data = await res.json();
+      setLoading(false);
+
+      if (res.ok && data.status === 'success') {
+        setWhatsappResendTimer(30);
+        setCanResendWhatsapp(false);
+        setSuccessMessage('WhatsApp verification code resent successfully.');
+      } else {
+        setErrorMessage(data.message || 'Failed to resend WhatsApp code.');
+      }
+    } catch {
+      setLoading(false);
+      setErrorMessage('Server connection error during WhatsApp OTP resend.');
+    }
+  };
+
+  // STEP 5: Verify WhatsApp OTP Submission
+  const handleVerifyWhatsappOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const finalOtp = whatsappOtp.join('');
+    if (finalOtp.length !== 4) {
+      setErrorMessage('Please enter the 4-digit code received on WhatsApp.');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    try {
+      const cleanMobile = mobileNumber.replace(/[^0-9]/g, '');
+      const res = await fetch('/api/v1/auth/whatsapp/verify-otp/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mobile_number: cleanMobile, otp: finalOtp }),
+      });
+      const data = await res.json();
+      setLoading(false);
+
+      if (res.ok && data.status === 'success') {
+        setSuccessMessage('Mobile verified successfully via WhatsApp!');
+        setStep('password-setup');
+      } else {
+        setErrorMessage(data.message || 'Invalid or expired WhatsApp OTP.');
+      }
+    } catch {
+      setLoading(false);
+      setErrorMessage('Server verification error for WhatsApp code.');
+    }
+  };
+
+  // STEP 6: Final Account Creation (Master Password + Workspace Launch)
   const handleFinalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (password.length < 8) {
-      setErrorMessage('Password must be at least 8 characters long.');
+      setErrorMessage('Master Password must be at least 8 characters long.');
       return;
     }
 
@@ -484,17 +578,18 @@ function AuthContent() {
 
     try {
       const isLogin = step === 'login-password';
-      const endpoint = isLogin ? '/api/v1/auth/login/' : '/api/v1/auth/signup/';
+      const endpoint = isLogin ? '/api/v1/auth/login/' : '/api/v1/auth/google/complete-signup/';
 
       const payload = isLogin
         ? { identifier: identifier.trim(), password: password }
         : {
-            email: identifier.includes('@') ? identifier.trim() : '',
-            username: username.trim() || identifier.trim(),
-            password: password,
-            fullName: organizationName,
-            organizationName: organizationName,
-            mobileNumber: mobileNumber
+            email: identifier.trim() || searchParams.get('email') || '',
+            first_name: firstName.trim(),
+            last_name: lastName.trim(),
+            username: username.trim(),
+            organization_name: organizationName.trim(),
+            mobile_number: mobileNumber.trim(),
+            password: password
           };
 
       const response = await fetch(endpoint, {
@@ -506,31 +601,32 @@ function AuthContent() {
       const data = await response.json();
       setLoading(false);
 
-      if (response.ok) {
-        const userToken = data.token || data.access || data.key || data.auth_token;
-        if (userToken) {
-          localStorage.setItem('authToken', userToken);
-        } else {
-          localStorage.setItem('authToken', 'active_session_token_' + Date.now());
-        }
+      if (response.ok && (data.status === 'success' || data.token)) {
+        const userToken = data.token || data.access || 'session_' + Date.now();
+        localStorage.setItem('authToken', userToken);
 
-        // सबडोमेन और कस्टम डोमेन सपोर्ट के लिए कुकी सेट करें
-        document.cookie = 'kosisko_logged_in=true; path=/; max-age=86400; SameSite=Lax';
+        document.cookie = 'kosisko_logged_in=true; path=/; domain=.kosisko.com; max-age=86400; SameSite=Lax';
         sessionStorage.removeItem('kosisko_logout_active');
 
-        window.location.href = '/customer/marketplace';
+        if (data.workspace_url) {
+          window.location.href = data.workspace_url;
+        } else {
+          window.location.replace('/customer/marketplace');
+        }
       } else {
-        setErrorMessage(data.message || data.error || 'Authentication failed. Please check credentials.');
+        setErrorMessage(data.error || data.detail || data.message || 'Authentication failed. Please check your credentials.');
       }
-    } catch (err) {
+    } catch {
       setLoading(false);
-      setErrorMessage('Server connection error. Make sure Django backend is active.');
+      setErrorMessage('Server connection error. Make sure the backend server is running.');
     }
   };
 
+  // Forgot Password Trigger
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!identifier.trim()) {
+    const cleanId = identifier.trim();
+    if (!cleanId) {
       setErrorMessage('Please enter your registered Email, Username, or Mobile Number first.');
       return;
     }
@@ -542,7 +638,7 @@ function AuthContent() {
     fetch('/api/v1/auth/forgot-password/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identifier: identifier.trim(), email: identifier.trim() }),
+      body: JSON.stringify({ identifier: cleanId, email: cleanId }),
     }).catch(err => {
       console.log('Background mail trigger error:', err);
     });
@@ -550,40 +646,40 @@ function AuthContent() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-50 via-slate-50 to-indigo-50 text-slate-900 flex items-center justify-center p-4 relative overflow-hidden font-sans">
-      
-      {/* पूरे पेज पर लाइव माउस स्पॉटलाइट इफ़ेक्ट */}
+
+      {/* Live Global Mouse Spotlight Effect */}
       <div
         className="absolute pointer-events-none inset-0 transition-opacity duration-300 z-0"
         style={{
           background: `radial-gradient(600px circle at ${mousePos.x}px ${mousePos.y}px, rgba(248, 4, 65, 0.25), transparent 70%)`
         }}
-      ></div>
+      />
 
-      {/* आधुनिक डॉट ग्रिड पैटर्न */}
-      <div className="absolute inset-0 bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:28px_28px] opacity-40 pointer-events-none"></div>
+      {/* Modern Dot Grid Background Pattern */}
+      <div className="absolute inset-0 bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:28px_28px] opacity-40 pointer-events-none" />
 
-      {/* जीवंत एम्बिएंट ओर्ब्स */}
-      <div className="absolute top-1/4 left-1/4 w-[700px] h-[700px] bg-amber-400/30 rounded-full blur-[190px] pointer-events-none animate-pulse"></div>
-      <div className="absolute bottom-1/4 right-1/4 w-[700px] h-[700px] bg-indigo-400/25 rounded-full blur-[200px] pointer-events-none animate-pulse duration-1000"></div>
+      {/* Ambient Gradient Orbs */}
+      <div className="absolute top-1/4 left-1/4 w-[700px] h-[700px] bg-amber-400/30 rounded-full blur-[190px] pointer-events-none animate-pulse" />
+      <div className="absolute bottom-1/4 right-1/4 w-[700px] h-[700px] bg-indigo-400/25 rounded-full blur-[200px] pointer-events-none animate-pulse duration-1000" />
 
-      {/* मुख्य सुपर-प्रीमियम ग्लास कार्ड */}
+      {/* Main Glassmorphic Card Container */}
       <div className="w-full max-w-md bg-white/95 border border-slate-300/80 p-8 rounded-[40px] backdrop-blur-3xl shadow-[0_25px_80px_rgba(0,0,0,0.08),_0_0_40px_rgba(245,158,11,0.1)] relative z-10">
 
-        {/* टॉप ग्रीटिंग और सिक्योर पोर्टल स्टेटस */}
+        {/* Top Greeting and Secure Portal Status */}
         <div className="flex items-center justify-between mb-6 relative z-10">
           <span className="text-[10px] tracking-widest text-amber-900 font-extrabold uppercase bg-amber-100 py-1.5 px-3.5 rounded-full border border-amber-300 shadow-sm">
             ✨ {greeting}
           </span>
 
           <div className="flex items-center gap-1.5 text-[9px] text-emerald-700 font-bold bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-200 shadow-sm">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
             <span>Secure Enterprise Portal</span>
           </div>
         </div>
 
-        {/* प्योर व्हाइट लोगो बॉक्स */}
+        {/* Brand Logo Display Box */}
         <div className="text-center mb-6 flex flex-col items-center justify-center relative z-10">
-          <div className="absolute w-52 h-20 bg-gradient-to-r from-amber-400/25 via-yellow-300/35 to-amber-400/25 rounded-full blur-2xl pointer-events-none animate-pulse"></div>
+          <div className="absolute w-52 h-20 bg-gradient-to-r from-amber-400/25 via-yellow-300/35 to-amber-400/25 rounded-full blur-2xl pointer-events-none animate-pulse" />
 
           <div className="w-full max-w-[230px] py-4 px-6 rounded-[28px] bg-white border border-slate-200 shadow-[0_8px_25px_rgba(0,0,0,0.06)] flex items-center justify-center min-h-[90px] group cursor-pointer overflow-hidden transition-all duration-300 hover:scale-110 hover:border-amber-400 hover:shadow-[0_15px_40px_rgba(245,158,11,0.3)] relative z-10">
             <img
@@ -594,19 +690,20 @@ function AuthContent() {
           </div>
         </div>
 
+        {/* Dynamic Alerts */}
         {errorMessage && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-2xl text-red-600 text-xs font-bold text-center relative z-10">
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-2xl text-red-600 text-xs font-bold text-center relative z-10 animate-fadeIn">
             {errorMessage}
           </div>
         )}
 
         {successMessage && (
-          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-600 text-xs font-bold text-center relative z-10">
+          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-600 text-xs font-bold text-center relative z-10 animate-fadeIn">
             {successMessage}
           </div>
         )}
 
-        {/* शॉर्टकट बटन्स */}
+        {/* Quick Shortcut Buttons */}
         {step === 'universal-input' && (
           <div className="space-y-3.5 mb-6 animate-fadeIn relative z-10">
             <button
@@ -615,7 +712,12 @@ function AuthContent() {
               disabled={loading}
               className="w-full py-4 px-4 rounded-2xl bg-white hover:bg-slate-100 active:bg-slate-900 active:text-white border border-slate-300 text-slate-900 text-xs font-extrabold flex items-center justify-center gap-3 transition-none cursor-pointer shadow-sm"
             >
-              <span className="text-base">🌐</span>
+              <svg className="w-4 h-4" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+              </svg>
               <span>Continue with Google</span>
             </button>
 
@@ -630,16 +732,16 @@ function AuthContent() {
             </button>
 
             <div className="flex items-center my-5">
-              <div className="flex-1 border-t border-slate-300"></div>
+              <div className="flex-1 border-t border-slate-300" />
               <span className="px-3 text-[9px] text-slate-400 uppercase tracking-widest font-black">Or Enterprise Access</span>
-              <div className="flex-1 border-t border-slate-300"></div>
+              <div className="flex-1 border-t border-slate-300" />
             </div>
           </div>
         )}
 
-        {/* स्टेप 1: यूनिवर्सल इनपुट */}
+        {/* STEP 1: Universal Identifier Input */}
         {step === 'universal-input' && (
-          <form onSubmit={handleUniversalSubmit} className="space-y-4 animate-fadeIn relative z-10">
+          <form onSubmit={handleUniversalSubmit} className="space-y-4 animate-fadeIn relative z-10 text-left">
             <div>
               <label className="block text-[10px] uppercase tracking-wider font-extrabold text-slate-700 mb-1.5">
                 Username, Work Email, or Mobile Number
@@ -647,11 +749,14 @@ function AuthContent() {
               <input
                 type="text"
                 required
-                placeholder="e.g. john_doe, name@company.com, 9876543210"
+                placeholder="e.g. arpit, name@company.com, 9876543210"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500 shadow-inner"
               />
+              <p className="text-[10px] text-slate-500 mt-1.5">
+                Existing users can log in via Username, Email, or Mobile. New users must register using an Email Address.
+              </p>
             </div>
 
             <button
@@ -664,11 +769,11 @@ function AuthContent() {
           </form>
         )}
 
-        {/* स्टेप 2: ईमेल OTP */}
+        {/* STEP 2: Email OTP Verification */}
         {step === 'email-otp' && (
           <form onSubmit={handleVerifyEmailOtp} className="space-y-4 animate-fadeIn relative z-10">
             <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 text-center mb-2">
-              <p className="text-xs text-slate-700">Enter 4-digit OTP sent to <span className="text-amber-700 font-bold">{identifier}</span></p>
+              <p className="text-xs text-slate-700">Enter 4-digit code sent to <span className="text-amber-700 font-bold">{identifier}</span></p>
             </div>
 
             <div className="flex justify-center gap-3 my-3" onPaste={handleOtpPaste}>
@@ -697,105 +802,238 @@ function AuthContent() {
               </button>
             </div>
 
-            <button type="submit" disabled={loading} className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-emerald-600 active:text-white active:scale-[0.98] text-slate-950 font-black text-xs cursor-pointer shadow-lg transition-all duration-100">
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-emerald-600 active:text-white active:scale-[0.98] text-slate-950 font-black text-xs cursor-pointer shadow-lg transition-all duration-100"
+            >
               {loading ? 'Verifying...' : 'Verify Email OTP →'}
             </button>
           </form>
         )}
 
-        {/* स्टेप 3: ऑर्गनाइजेशन नेम और यूजरनेम सेटअप */}
-        {step === 'org-name' && (
-          <form onSubmit={handleOrgSubmit} className="space-y-4 animate-fadeIn relative z-10">
-            <div>
-              <label className="block text-[10px] uppercase tracking-wider font-extrabold text-slate-700 mb-1.5">
-                Choose a Unique Username
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. john_doe"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500 mb-3"
-              />
+        {/* STEP 3: Workspace Setup (Identity & Org Name) */}
+        {step === 'identity-org' && (
+          <form onSubmit={handleProceedToMobile} className="space-y-4 animate-fadeIn text-left relative z-10">
+            <div className="text-center mb-2">
+              <h3 className="text-sm font-black text-slate-900 tracking-wide uppercase">Workspace Setup</h3>
+              <p className="text-[11px] text-slate-500">Provide your personal identity and organization details</p>
+            </div>
 
-              <label className="block text-[10px] uppercase tracking-wider font-extrabold text-slate-700 mb-1.5">
-                Organization Name
+            <div className="grid grid-cols-2 gap-2.5">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  First Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  placeholder="e.g. Arpit"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs text-slate-900 bg-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Last Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  placeholder="e.g. Chandrol"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs text-slate-900 bg-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                  Choose Username <span className="text-rose-500">*</span>
+                </label>
+                {usernameStatus.checking && (
+                  <span className="text-[11px] font-medium text-amber-600 animate-pulse">Checking...</span>
+                )}
+              </div>
+
+              <div className="relative">
+                <input
+                  type="text"
+                  required
+                  value={username}
+                  onChange={(e) => handleUsernameChange(e.target.value)}
+                  placeholder="e.g. arpit_chandrol"
+                  className={`w-full px-4 py-2.5 rounded-xl border text-sm text-slate-900 bg-white focus:outline-none transition-all pr-10 ${
+                    usernameStatus.available === true
+                      ? 'border-emerald-500 bg-emerald-50/20 ring-2 ring-emerald-100'
+                      : usernameStatus.available === false
+                      ? 'border-rose-500 bg-rose-50/20 ring-2 ring-rose-100'
+                      : 'border-slate-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-100'
+                  }`}
+                  autoComplete="off"
+                />
+                <div className="absolute right-3 top-2.5">
+                  {usernameStatus.checking && (
+                    <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                  )}
+                  {!usernameStatus.checking && usernameStatus.available === true && (
+                    <span className="text-emerald-600 font-black text-sm">✓</span>
+                  )}
+                  {!usernameStatus.checking && usernameStatus.available === false && (
+                    <span className="text-rose-600 font-black text-sm">✕</span>
+                  )}
+                </div>
+              </div>
+
+              {usernameStatus.message && (
+                <p className={`text-[11px] mt-1.5 font-semibold flex items-center gap-1 ${
+                  usernameStatus.available === true
+                    ? 'text-emerald-600'
+                    : usernameStatus.available === false
+                    ? 'text-rose-600'
+                    : 'text-amber-600'
+                }`}>
+                  {usernameStatus.message}
+                </p>
+              )}
+            </div>
+
+            <div className="mt-2">
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                Organization / Company Name <span className="text-rose-500">*</span>
               </label>
               <input
                 type="text"
                 required
-                placeholder="Enter organization name"
                 value={organizationName}
                 onChange={(e) => setOrganizationName(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
+                placeholder="e.g. Ratan Enterprises"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-900 bg-white focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100 transition-all"
               />
             </div>
-            <button type="submit" className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-cyan-500 active:text-slate-950 active:scale-[0.98] text-slate-950 font-black text-xs cursor-pointer shadow-lg transition-all duration-100">
-              Mobile Verification →
+
+            <button
+              type="submit"
+              disabled={
+                !firstName ||
+                !lastName ||
+                !username ||
+                !organizationName ||
+                usernameStatus.available !== true ||
+                usernameStatus.checking ||
+                loading
+              }
+              className="w-full mt-4 py-3.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:bg-amber-800 text-white font-bold text-sm rounded-2xl shadow-lg shadow-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              {usernameStatus.checking
+                ? 'Verifying Username...'
+                : usernameStatus.available === false
+                ? 'Choose an Available Username'
+                : 'Proceed to Mobile Verification ➔'}
             </button>
           </form>
         )}
 
-        {/* स्टेप 4: मोबाइल नंबर */}
+        {/* STEP 4: Mobile Number Entry */}
         {step === 'mobile-input' && (
-          <form onSubmit={handleMobileSubmit} className="space-y-4 animate-fadeIn relative z-10">
+          <form onSubmit={handleMobileSubmit} className="space-y-4 animate-fadeIn relative z-10 text-left">
             <div>
               <label className="block text-[10px] uppercase tracking-wider font-extrabold text-slate-700 mb-1.5">
-                Mobile Number (WhatsApp)
+                Mobile Number (WhatsApp) <span className="text-rose-500">*</span>
               </label>
-              <input
-                type="tel"
-                required
-                placeholder="9876543210"
-                value={mobileNumber}
-                onChange={(e) => setMobileNumber(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
-              />
+              <div className="relative">
+                <span className="absolute left-4 top-3.5 text-xs font-bold text-slate-500">+91</span>
+                <input
+                  type="tel"
+                  required
+                  maxLength={10}
+                  placeholder="9876543210"
+                  value={mobileNumber}
+                  onChange={(e) => setMobileNumber(e.target.value.replace(/[^0-9]/g, ''))}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-2xl pl-12 pr-4 py-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500 shadow-inner"
+                />
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1">We will send a 4-digit verification code directly to your WhatsApp.</p>
             </div>
-            <button type="submit" className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-purple-600 active:text-white active:scale-[0.98] text-slate-950 font-black text-xs cursor-pointer shadow-lg transition-all duration-100">
-              Proceed to WhatsApp Verification →
+
+            <div className="flex justify-between items-center text-[10px]">
+              <button type="button" onClick={() => setStep('identity-org')} className="text-slate-500 hover:underline cursor-pointer">
+                ← Back
+              </button>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || mobileNumber.length < 10}
+              className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-purple-600 active:text-white active:scale-[0.98] text-slate-950 font-black text-xs cursor-pointer shadow-lg transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Sending WhatsApp OTP...' : 'Send WhatsApp OTP →'}
             </button>
           </form>
         )}
 
-        {/* स्टेप 5: व्हाट्सएप वेरिफिकेशन */}
+        {/* STEP 5: WhatsApp Real OTP Verification Form */}
         {step === 'whatsapp-verify' && (
-          <div className="space-y-4 text-center animate-fadeIn relative z-10">
-            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200">
-              <span className="text-2xl mb-2 block">💬</span>
-              <h3 className="text-xs font-black text-slate-900 mb-1">Verify via WhatsApp</h3>
+          <form onSubmit={handleVerifyWhatsappOtp} className="space-y-4 animate-fadeIn relative z-10 text-center">
+            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-left">
+              <span className="text-2xl mb-1 block">💬</span>
+              <h3 className="text-xs font-black text-slate-900 mb-1">Verify WhatsApp Code</h3>
               <p className="text-[11px] text-slate-600 leading-relaxed">
-                Click below to send a secure activation token from your WhatsApp number <strong className="text-emerald-700">{mobileNumber}</strong>.
+                Enter the 4-digit code sent to your WhatsApp number <strong className="text-emerald-700">+91 {mobileNumber}</strong>.
               </p>
             </div>
 
-            <a
-              href={`https://wa.me/919876543210?text=Verify%20My%20Kosisko%20Account%20ID%3A%20${mobileNumber}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={handleWhatsAppVerified}
-              className="w-full py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:bg-zinc-900 active:text-white active:scale-[0.98] text-white font-black text-xs transition-all duration-100 flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer"
-            >
-              <span>🟢 Open WhatsApp & Verify</span>
-            </a>
+            <div className="flex justify-center gap-3 my-3" onPaste={handleWhatsappOtpPaste}>
+              {whatsappOtp.map((digit, idx) => (
+                <input
+                  key={idx}
+                  ref={(el) => { whatsappOtpInputsRef.current[idx] = el; }}
+                  type="text"
+                  maxLength={1}
+                  value={digit}
+                  onChange={(e) => handleWhatsappOtpChange(idx, e.target.value)}
+                  className="w-12 h-14 text-center text-xl font-black bg-slate-50 border border-slate-300 rounded-2xl text-slate-900 focus:outline-none focus:border-emerald-500 shadow-inner"
+                />
+              ))}
+            </div>
+
+            <div className="flex justify-between text-[10px] items-center">
+              <button 
+                type="button" 
+                onClick={() => setStep('mobile-input')} 
+                className="text-slate-500 hover:underline cursor-pointer"
+              >
+                ← Change Number
+              </button>
+              <button
+                type="button"
+                onClick={handleResendWhatsappOtp}
+                disabled={!canResendWhatsapp || loading}
+                className={`font-bold cursor-pointer ${canResendWhatsapp ? 'text-emerald-700 hover:underline' : 'text-slate-400 cursor-not-allowed'}`}
+              >
+                {canResendWhatsapp ? '🔄 Resend WhatsApp Code' : `Resend in ${whatsappResendTimer}s`}
+              </button>
+            </div>
 
             <button
-              type="button"
-              onClick={handleWhatsAppVerified}
-              className="text-[10px] text-slate-500 hover:text-slate-900 underline cursor-pointer"
+              type="submit"
+              disabled={loading || whatsappOtp.join('').length !== 4}
+              className="w-full py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:bg-zinc-900 active:text-white active:scale-[0.98] text-white font-black text-xs transition-all duration-100 flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Message sent? Proceed to password setup →
+              {loading ? 'Verifying Code...' : 'Verify WhatsApp & Continue →'}
             </button>
-          </div>
+          </form>
         )}
 
-        {/* स्टेप 6: पासवर्ड सेटअप (साइनअप कंप्लीशन) */}
+        {/* STEP 6: Master Password Setup (Finalize Onboarding) */}
         {step === 'password-setup' && (
-          <form onSubmit={handleFinalSubmit} className="space-y-4 animate-fadeIn relative z-10">
+          <form onSubmit={handleFinalSubmit} className="space-y-4 animate-fadeIn relative z-10 text-left">
             <div>
               <label className="block text-[10px] uppercase tracking-wider font-extrabold text-slate-700 mb-1.5">
-                Create Secure Password (Min 8 Characters)
+                Create Secure Password (Min 8 Characters) <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
                 <input
@@ -827,7 +1065,7 @@ function AuthContent() {
                     <div
                       className={`h-full transition-all duration-300 ${passwordStrength.color}`}
                       style={{ width: `${passwordStrength.score}%` }}
-                    ></div>
+                    />
                   </div>
                 </div>
               )}
@@ -840,16 +1078,16 @@ function AuthContent() {
               disabled={loading}
               className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-rose-600 active:text-white active:scale-[0.98] text-slate-950 font-black text-xs transition-all duration-100 shadow-lg cursor-pointer flex items-center justify-center gap-2"
             >
-              {loading ? 'Provisioning Workspace...' : 'Launch Workspace'}
+              {loading ? 'Provisioning Workspace...' : 'Launch Workspace ➔'}
             </button>
           </form>
         )}
 
-        {/* स्टेप 7: लॉगिन पासवर्ड */}
+        {/* STEP 7: Login Password (Existing User) */}
         {step === 'login-password' && (
-          <form onSubmit={handleFinalSubmit} className="space-y-4 animate-fadeIn relative z-10">
+          <form onSubmit={handleFinalSubmit} className="space-y-4 animate-fadeIn relative z-10 text-left">
             <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-between mb-2">
-              <span className="text-xs text-slate-700 truncate max-w-[240px]">{identifier}</span>
+              <span className="text-xs text-slate-700 truncate max-w-[240px] font-bold">{identifier}</span>
               <button type="button" onClick={() => setStep('universal-input')} className="text-[10px] text-amber-700 font-bold hover:underline cursor-pointer">Change</button>
             </div>
 
@@ -890,9 +1128,9 @@ function AuthContent() {
           </form>
         )}
 
-        {/* स्टेप 8: फॉरगेट पासवर्ड */}
+        {/* STEP 8: Forgot Password Recovery */}
         {step === 'forgot' && (
-          <form onSubmit={handleForgotPassword} className="space-y-4 animate-fadeIn relative z-10">
+          <form onSubmit={handleForgotPassword} className="space-y-4 animate-fadeIn relative z-10 text-left">
             <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 mb-2">
               <h3 className="text-xs font-bold text-slate-900 mb-1.5">Reset Master Password</h3>
               <p className="text-[10px] text-slate-600">Enter your registered Email, Username, or Mobile Number to receive recovery instructions.</p>
@@ -916,7 +1154,7 @@ function AuthContent() {
           </form>
         )}
 
-        {/* फुटर बैज */}
+        {/* Footer Security Badges */}
         <div className="mt-8 text-center border-t border-slate-200 pt-4 flex flex-col items-center justify-center gap-2 relative z-10">
           <div className="flex items-center gap-1.5 text-[9px] text-emerald-700 font-bold bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 shadow-sm">
             <span>🔒</span>
