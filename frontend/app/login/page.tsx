@@ -631,17 +631,31 @@ function AuthContent() {
       return;
     }
 
-    setSuccessMessage('Password reset instructions sent to your registered contact.');
-    setStep('login-password');
     setErrorMessage('');
+    setSuccessMessage('Sending verification code via WhatsApp & Email...');
 
-    fetch('/api/v1/auth/forgot-password/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identifier: cleanId, email: cleanId }),
-    }).catch(err => {
-      console.log('Background mail trigger error:', err);
-    });
+    try {
+      const res = await fetch('/api/v1/auth/forgot-password/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: cleanId, email: cleanId }),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.status === 'success') {
+        setSuccessMessage(data.message || 'OTP dispatched! Redirecting...');
+        const targetUser = data.username || cleanId;
+        setTimeout(() => {
+          window.location.href = `/reset-password?user=${encodeURIComponent(targetUser)}`;
+        }, 1000);
+      } else {
+        setSuccessMessage('');
+        setErrorMessage(data.message || 'No registered account found matching these details.');
+      }
+    } catch (err) {
+      setSuccessMessage('');
+      setErrorMessage('Server connection error. Please try again.');
+    }
   };
 
   return (
