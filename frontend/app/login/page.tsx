@@ -23,12 +23,18 @@ function AuthContent() {
   const [identifier, setIdentifier] = useState('');
   const [otpValues, setOtpValues] = useState(['', '', '', '']);
   const otpInputsRef = useRef<(HTMLInputElement | null)[]>([]);
+  // 🌟 Auto-Focus Refs (TypeScript Type Fixed)
+  const universalInputRef = useRef<HTMLInputElement | null>(null);
+  const firstNameInputRef = useRef<HTMLInputElement | null>(null);
+  const mobileInputRef = useRef<HTMLInputElement | null>(null);
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
+  const forgotInputRef = useRef<HTMLInputElement | null>(null);
 
   // WhatsApp OTP Verification Specific States
   const [whatsappOtp, setWhatsappOtp] = useState(['', '', '', '']);
   const whatsappOtpInputsRef = useRef<(HTMLInputElement | null)[]>([]);
   const [whatsappResendTimer, setWhatsappResendTimer] = useState(30);
-  const [canResendWhatsapp, setCanResendWhatsapp] = useState(false);
+   const [canResendWhatsapp, setCanResendWhatsapp] = useState(false);
 
   // Registration Fields (Zero Pre-fill)
   const [firstName, setFirstName] = useState('');
@@ -37,6 +43,8 @@ function AuthContent() {
   const [organizationName, setOrganizationName] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Live Username Uniqueness Status Tracker
   const [usernameStatus, setUsernameStatus] = useState<{
@@ -137,6 +145,29 @@ function AuthContent() {
     }
     return () => clearInterval(timer);
   }, [step, whatsappResendTimer]);
+
+  // 🌟 Universal Auto-Focus on Step Change
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (step === 'universal-input') {
+        universalInputRef.current?.focus();
+      } else if (step === 'email-otp') {
+        otpInputsRef.current[0]?.focus();
+      } else if (step === 'identity-org') {
+        firstNameInputRef.current?.focus();
+      } else if (step === 'mobile-input') {
+        mobileInputRef.current?.focus();
+      } else if (step === 'whatsapp-verify') {
+        whatsappOtpInputsRef.current[0]?.focus();
+      } else if (step === 'password-setup' || step === 'login-password') {
+        passwordInputRef.current?.focus();
+      } else if (step === 'forgot') {
+        forgotInputRef.current?.focus();
+      }
+    }, 120);
+
+    return () => clearTimeout(timer);
+  }, [step]);
 
   // Google Callback & Magic Link Auto-Verify Listener
   useEffect(() => {
@@ -303,7 +334,7 @@ function AuthContent() {
     e.preventDefault();
     const cleanId = identifier.trim();
     if (!cleanId) {
-      setErrorMessage('Please enter your Username, Work Email, or Mobile Number.');
+      setErrorMessage('Please enter your Username, Email, or Mobile Number.');
       return;
     }
     setLoading(true);
@@ -332,7 +363,6 @@ function AuthContent() {
             setStep('email-otp');
             setResendTimer(30);
             setCanResend(false);
-            setSuccessMessage(`Verification code sent successfully to ${cleanId}`);
           } else {
             setErrorMessage('Failed to send verification code to your email.');
           }
@@ -355,6 +385,19 @@ function AuthContent() {
 
     if (value && index < 3) {
       otpInputsRef.current[index + 1]?.focus();
+    }
+  };
+
+  // Email OTP Smooth Backspace Handler
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace') {
+      if (!otpValues[index] && index > 0) {
+        e.preventDefault();
+        const newOtp = [...otpValues];
+        newOtp[index - 1] = '';
+        setOtpValues(newOtp);
+        otpInputsRef.current[index - 1]?.focus();
+      }
     }
   };
 
@@ -439,6 +482,7 @@ function AuthContent() {
     }
 
     setErrorMessage('');
+    setSuccessMessage('');
     setStep('mobile-input');
   };
 
@@ -468,7 +512,6 @@ function AuthContent() {
         setWhatsappOtp(['', '', '', '']);
         setWhatsappResendTimer(30);
         setCanResendWhatsapp(false);
-        setSuccessMessage(data.message || `WhatsApp verification code sent to +91 ${cleanMobile}`);
         setStep('whatsapp-verify');
       } else {
         setErrorMessage(data.message || 'Failed to send WhatsApp verification code. Please try again.');
@@ -488,6 +531,19 @@ function AuthContent() {
 
     if (value && index < 3) {
       whatsappOtpInputsRef.current[index + 1]?.focus();
+    }
+  };
+
+  // WhatsApp OTP Smooth Backspace Handler
+  const handleWhatsappOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace') {
+      if (!whatsappOtp[index] && index > 0) {
+        e.preventDefault();
+        const newOtp = [...whatsappOtp];
+        newOtp[index - 1] = '';
+        setWhatsappOtp(newOtp);
+        whatsappOtpInputsRef.current[index - 1]?.focus();
+      }
     }
   };
 
@@ -568,8 +624,15 @@ function AuthContent() {
   // STEP 6: Final Account Creation (Master Password + Workspace Launch)
   const handleFinalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const isLogin = step === 'login-password';
+
     if (password.length < 8) {
       setErrorMessage('Master Password must be at least 8 characters long.');
+      return;
+    }
+
+    if (!isLogin && password !== confirmPassword) {
+      setErrorMessage('Passwords do not match. Please verify both fields.');
       return;
     }
 
@@ -695,7 +758,7 @@ function AuthContent() {
         <div className="text-center mb-6 flex flex-col items-center justify-center relative z-10">
           <div className="absolute w-52 h-20 bg-gradient-to-r from-amber-400/25 via-yellow-300/35 to-amber-400/25 rounded-full blur-2xl pointer-events-none animate-pulse" />
 
-          <div className="w-full max-w-[230px] py-4 px-6 rounded-[28px] bg-white border border-slate-200 shadow-[0_8px_25px_rgba(0,0,0,0.06)] flex items-center justify-center min-h-[90px] group cursor-pointer overflow-hidden transition-all duration-300 hover:scale-110 hover:border-amber-400 hover:shadow-[0_15px_40px_rgba(245,158,11,0.3)] relative z-10">
+          <div className="w-full max-w-[230px] py-4 px-6 rounded-[28px] bg-white border border-slate-200 shadow-[0_8px_25px_rgba(0,0,0,0.06)] flex items-center justify-center min-h-[90px] group cursor-pointer overflow-hidden transition-all duration-300 hover:scale-140 hover:border-amber-400 hover:shadow-[0_15px_40px_rgba(245,158,11,0.3)] relative z-10">
             <img
               src={brand.logoUrl}
               alt={brand.name}
@@ -758,25 +821,23 @@ function AuthContent() {
           <form onSubmit={handleUniversalSubmit} className="space-y-4 animate-fadeIn relative z-10 text-left">
             <div>
               <label className="block text-[10px] uppercase tracking-wider font-extrabold text-slate-700 mb-1.5">
-                Username, Work Email, or Mobile Number
+                Username, Email, or Mobile Number
               </label>
               <input
+                ref={universalInputRef}
                 type="text"
                 required
-                placeholder="e.g. arpit, name@company.com, 9876543210"
+                placeholder=""
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500 shadow-inner"
               />
-              <p className="text-[10px] text-slate-500 mt-1.5">
-                Existing users can log in via Username, Email, or Mobile. New users must register using an Email Address.
-              </p>
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-blue-600 active:text-white text-slate-950 font-black text-xs transition-none shadow-lg cursor-pointer flex items-center justify-center gap-2"
+              className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-blue-600 active:text-white text-slate-950 font-black text-xs transition-all shadow-lg cursor-pointer flex items-center justify-center gap-2 active:scale-[0.98]"
             >
               {loading ? 'Verifying Identity...' : 'Continue Securely →'}
             </button>
@@ -799,6 +860,7 @@ function AuthContent() {
                   maxLength={1}
                   value={digit}
                   onChange={(e) => handleOtpChange(idx, e.target.value)}
+                  onKeyDown={(e) => handleOtpKeyDown(idx, e)}
                   className="w-12 h-14 text-center text-xl font-black bg-slate-50 border border-slate-300 rounded-2xl text-slate-900 focus:outline-none focus:border-amber-500 shadow-inner"
                 />
               ))}
@@ -819,7 +881,7 @@ function AuthContent() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-emerald-600 active:text-white active:scale-[0.98] text-slate-950 font-black text-xs cursor-pointer shadow-lg transition-all duration-100"
+              className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-purple-600 active:text-white active:scale-[0.98] text-slate-950 font-black text-xs cursor-pointer shadow-lg transition-all duration-100"
             >
               {loading ? 'Verifying...' : 'Verify Email OTP →'}
             </button>
@@ -840,11 +902,12 @@ function AuthContent() {
                   First Name <span className="text-rose-500">*</span>
                 </label>
                 <input
+                  ref={firstNameInputRef}
                   type="text"
                   required
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
-                  placeholder="e.g. Arpit"
+                  placeholder=""
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs text-slate-900 bg-white focus:outline-none focus:border-amber-500"
                 />
               </div>
@@ -857,7 +920,7 @@ function AuthContent() {
                   required
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
-                  placeholder="e.g. Chandrol"
+                  placeholder=""
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs text-slate-900 bg-white focus:outline-none focus:border-amber-500"
                 />
               </div>
@@ -879,7 +942,7 @@ function AuthContent() {
                   required
                   value={username}
                   onChange={(e) => handleUsernameChange(e.target.value)}
-                  placeholder="e.g. arpit_chandrol"
+                  placeholder=""
                   className={`w-full px-4 py-2.5 rounded-xl border text-sm text-slate-900 bg-white focus:outline-none transition-all pr-10 ${
                     usernameStatus.available === true
                       ? 'border-emerald-500 bg-emerald-50/20 ring-2 ring-emerald-100'
@@ -924,7 +987,7 @@ function AuthContent() {
                 required
                 value={organizationName}
                 onChange={(e) => setOrganizationName(e.target.value)}
-                placeholder="e.g. Ratan Enterprises"
+                placeholder=""
                 className="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-900 bg-white focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100 transition-all"
               />
             </div>
@@ -940,7 +1003,7 @@ function AuthContent() {
                 usernameStatus.checking ||
                 loading
               }
-              className="w-full mt-4 py-3.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:bg-amber-800 text-white font-bold text-sm rounded-2xl shadow-lg shadow-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              className="w-full mt-4 py-3.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:from-slate-900 active:to-black active:scale-[0.98] text-white font-bold text-sm rounded-2xl shadow-lg shadow-amber-500/20 active:shadow-slate-950/40 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150"
             >
               {usernameStatus.checking
                 ? 'Verifying Username...'
@@ -959,18 +1022,18 @@ function AuthContent() {
                 Mobile Number (WhatsApp) <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
-                <span className="absolute left-4 top-3.5 text-xs font-bold text-slate-500">+91</span>
+                <span className="absolute left-4 top-4 text-xs font-bold text-slate-500">+91</span>
                 <input
+                  ref={mobileInputRef}
                   type="tel"
                   required
                   maxLength={10}
-                  placeholder="9876543210"
+                  placeholder=""
                   value={mobileNumber}
                   onChange={(e) => setMobileNumber(e.target.value.replace(/[^0-9]/g, ''))}
                   className="w-full bg-slate-50 border border-slate-300 rounded-2xl pl-12 pr-4 py-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500 shadow-inner"
                 />
-              </div>
-              <p className="text-[10px] text-slate-500 mt-1">We will send a 4-digit verification code directly to your WhatsApp.</p>
+              </div>              
             </div>
 
             <div className="flex justify-between items-center text-[10px]">
@@ -982,7 +1045,7 @@ function AuthContent() {
             <button
               type="submit"
               disabled={loading || mobileNumber.length < 10}
-              className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-purple-600 active:text-white active:scale-[0.98] text-slate-950 font-black text-xs cursor-pointer shadow-lg transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-emerald-600 active:text-white active:scale-[0.98] text-slate-950 font-black text-xs cursor-pointer shadow-lg transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {loading ? 'Sending WhatsApp OTP...' : 'Send WhatsApp OTP →'}
             </button>
@@ -992,11 +1055,10 @@ function AuthContent() {
         {/* STEP 5: WhatsApp Real OTP Verification Form */}
         {step === 'whatsapp-verify' && (
           <form onSubmit={handleVerifyWhatsappOtp} className="space-y-4 animate-fadeIn relative z-10 text-center">
-            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-left">
-              <span className="text-2xl mb-1 block">💬</span>
-              <h3 className="text-xs font-black text-slate-900 mb-1">Verify WhatsApp Code</h3>
-              <p className="text-[11px] text-slate-600 leading-relaxed">
-                Enter the 4-digit code sent to your WhatsApp number <strong className="text-emerald-700">+91 {mobileNumber}</strong>.
+            <div className="text-center mb-3">
+              <h3 className="text-sm font-black text-slate-900 tracking-wide uppercase">WhatsApp Verification</h3>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Enter 4-digit code sent to <strong className="text-slate-800">+91 {mobileNumber}</strong>
               </p>
             </div>
 
@@ -1009,15 +1071,16 @@ function AuthContent() {
                   maxLength={1}
                   value={digit}
                   onChange={(e) => handleWhatsappOtpChange(idx, e.target.value)}
-                  className="w-12 h-14 text-center text-xl font-black bg-slate-50 border border-slate-300 rounded-2xl text-slate-900 focus:outline-none focus:border-emerald-500 shadow-inner"
+                  onKeyDown={(e) => handleWhatsappOtpKeyDown(idx, e)}
+                  className="w-12 h-14 text-center text-xl font-black bg-slate-50 border border-slate-300 rounded-2xl text-slate-900 focus:outline-none focus:border-amber-500 shadow-inner"
                 />
               ))}
             </div>
 
             <div className="flex justify-between text-[10px] items-center">
-              <button 
-                type="button" 
-                onClick={() => setStep('mobile-input')} 
+              <button
+                type="button"
+                onClick={() => setStep('mobile-input')}
                 className="text-slate-500 hover:underline cursor-pointer"
               >
                 ← Change Number
@@ -1026,16 +1089,16 @@ function AuthContent() {
                 type="button"
                 onClick={handleResendWhatsappOtp}
                 disabled={!canResendWhatsapp || loading}
-                className={`font-bold cursor-pointer ${canResendWhatsapp ? 'text-emerald-700 hover:underline' : 'text-slate-400 cursor-not-allowed'}`}
+                className={`font-bold cursor-pointer ${canResendWhatsapp ? 'text-amber-700 hover:underline' : 'text-slate-400 cursor-not-allowed'}`}
               >
-                {canResendWhatsapp ? '🔄 Resend WhatsApp Code' : `Resend in ${whatsappResendTimer}s`}
+                {canResendWhatsapp ? '🔄 Resend Code' : `Resend in ${whatsappResendTimer}s`}
               </button>
             </div>
 
             <button
               type="submit"
               disabled={loading || whatsappOtp.join('').length !== 4}
-              className="w-full py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:bg-zinc-900 active:text-white active:scale-[0.98] text-white font-black text-xs transition-all duration-100 flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-rose-600 active:text-white active:scale-[0.98] text-slate-950 font-black text-xs transition-all duration-150 flex items-center justify-center gap-2 shadow-lg cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {loading ? 'Verifying Code...' : 'Verify WhatsApp & Continue →'}
             </button>
@@ -1045,18 +1108,25 @@ function AuthContent() {
         {/* STEP 6: Master Password Setup (Finalize Onboarding) */}
         {step === 'password-setup' && (
           <form onSubmit={handleFinalSubmit} className="space-y-4 animate-fadeIn relative z-10 text-left">
+            <div className="text-center mb-1">
+              <h3 className="text-sm font-black text-slate-900 tracking-wide uppercase">Set Master Password</h3>
+              <p className="text-[11px] text-slate-500">Secure your enterprise workspace account</p>
+            </div>
+
+            {/* 1. Master Password Box */}
             <div>
               <label className="block text-[10px] uppercase tracking-wider font-extrabold text-slate-700 mb-1.5">
-                Create Secure Password (Min 8 Characters) <span className="text-rose-500">*</span>
+                Master Password (Min 8 Characters) <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
                 <input
+                  ref={passwordInputRef}
                   type={showPassword ? 'text' : 'password'}
                   required
-                  placeholder="••••••••"
+                  placeholder=""
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500 pr-10"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-3.5 text-xs text-slate-900 focus:outline-none focus:border-amber-500 pr-10 shadow-inner"
                 />
                 <button
                   type="button"
@@ -1083,14 +1153,49 @@ function AuthContent() {
                   </div>
                 </div>
               )}
+            </div>
 
-              <p className="text-[9px] text-slate-500 mt-1">Must be at least 8 characters with letters & numbers.</p>
+            {/* 2. Confirm Password Box */}
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider font-extrabold text-slate-700 mb-1.5">
+                Confirm Master Password <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  required
+                  placeholder=""
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className={`w-full bg-slate-50 border rounded-2xl px-4 py-3.5 text-xs text-slate-900 focus:outline-none pr-10 shadow-inner transition-all ${
+                    confirmPassword && password !== confirmPassword
+                      ? 'border-rose-400 focus:border-rose-500'
+                      : confirmPassword && password === confirmPassword
+                      ? 'border-emerald-500 focus:border-emerald-500'
+                      : 'border-slate-300 focus:border-amber-500'
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-sm cursor-pointer"
+                >
+                  {showConfirmPassword ? '👁️‍🗨️' : '👁️'}
+                </button>
+              </div>
+
+              {/* Password Match Status Hint */}
+              {confirmPassword && (
+                <p className={`text-[10px] mt-1 font-bold ${password === confirmPassword ? 'text-emerald-600' : 'text-rose-500'}`}>
+                  {password === confirmPassword ? '✓ Passwords match perfectly' : '✕ Passwords do not match'}
+                </p>
+              )}
             </div>
 
             <button
               type="submit"
-              disabled={loading}
-              className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-rose-600 active:text-white active:scale-[0.98] text-slate-950 font-black text-xs transition-all duration-100 shadow-lg cursor-pointer flex items-center justify-center gap-2"
+              disabled={loading || password.length < 8 || password !== confirmPassword}
+              className="w-full mt-2 py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-blue-600 active:text-white active:scale-[0.98] text-slate-950 font-black text-xs transition-all duration-100 shadow-lg cursor-pointer flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {loading ? 'Provisioning Workspace...' : 'Launch Workspace ➔'}
             </button>
@@ -1111,9 +1216,10 @@ function AuthContent() {
               </label>
               <div className="relative">
                 <input
+                  ref={passwordInputRef}
                   type={showPassword ? 'text' : 'password'}
                   required
-                  placeholder="••••••••"
+                  placeholder=""
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500 pr-10"
@@ -1135,7 +1241,7 @@ function AuthContent() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-emerald-600 active:text-white text-slate-950 font-black text-xs transition-none shadow-lg cursor-pointer flex items-center justify-center gap-2"
+              className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-teal-600 active:text-white text-slate-950 font-black text-xs transition-none shadow-lg cursor-pointer flex items-center justify-center gap-2"
             >
               {loading ? 'Unlocking Workspace...' : 'Access Portal'}
             </button>
@@ -1152,9 +1258,10 @@ function AuthContent() {
 
             <div>
               <input
+                ref={forgotInputRef}
                 type="text"
                 required
-                placeholder="Email, Username, or Mobile"
+                placeholder=""
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
@@ -1163,7 +1270,7 @@ function AuthContent() {
 
             <div className="flex gap-2">
               <button type="button" onClick={() => setStep('login-password')} className="flex-1 py-3 rounded-2xl bg-slate-200 hover:bg-slate-300 active:bg-slate-900 active:text-white text-xs font-bold text-slate-800 cursor-pointer transition-none">Back</button>
-              <button type="submit" disabled={loading} className="flex-1 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-blue-600 active:text-white active:scale-[0.98] text-slate-950 text-xs font-black cursor-pointer shadow-lg transition-none flex items-center justify-center gap-2">Send Link</button>
+              <button type="submit" disabled={loading} className="flex-1 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-red-600 active:text-white active:scale-[0.98] text-slate-950 text-xs font-black cursor-pointer shadow-lg transition-none flex items-center justify-center gap-2">Send Link</button>
             </div>
           </form>
         )}

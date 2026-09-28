@@ -15,7 +15,7 @@ from django.core.cache import cache
 from email.mime.image import MIMEImage
 from django.conf import settings
 from django.contrib.auth import authenticate, login
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -73,8 +73,8 @@ def get_kosisko_footer():
 # -----------------------------------------------------------------------------
 def get_client_base_url(request=None):
     """
-    ईमेल और रीडायरेक्ट के लिए 100% सही लाइव HTTPS डोमेन निकालता है।
-    मोबाइल ऐप्स (android-app://) या गूगल रेफ़रर को डोमेन बनने से रोकता है।
+    ईमेल लिंक्स के लिए 100% सही लाइव HTTPS डोमेन निकालता है।
+    लोकलहोस्ट को लाइव ईमेल में कभी भी जाने नहीं देता।
     """
     default_live_domain = "https://kosisko.com"
 
@@ -85,9 +85,8 @@ def get_client_base_url(request=None):
         origin = request.headers.get('Origin') or request.headers.get('Referer')
         if origin:
             parsed = urlparse(origin)
-            netloc = (parsed.netloc or '').lower()
-            # 🌟 केवल तभी स्वीकार करें जब यह वास्तव में kosisko या कस्टम डोमेन हो (android-app:// को रोकें)
-            if parsed.scheme in ['http', 'https'] and 'google' not in netloc and 'android-app' not in parsed.scheme:
+            if parsed.scheme and parsed.netloc:
+                netloc = parsed.netloc.lower()
                 if 'localhost' not in netloc and '127.0.0.1' not in netloc:
                     return f"{parsed.scheme}://{parsed.netloc}".rstrip('/')
 
@@ -161,7 +160,7 @@ def send_professional_welcome_email(user_obj, organization_name="Enterprise Work
             </div>
             <h2>Welcome to Kosisko!</h2>
             <p>Dear <strong>{username}</strong>,</p>
-            <p>Welcome to Kosisko! – <span class="slogan">' कोशिश से कामयाबी की ओर '</span> Your enterprise workspace is secured and ready.</p>
+            <p>Welcome to Kosisko! – <span class="slogan">'कोशिश से कामयाबी की ओर'</span>. Your enterprise workspace is secured and ready.</p>
 
             <div class="highlight-box">
                 <p style="margin: 0; color: #0f172a; font-weight: 700;">🔑 Enterprise Workspace Credentials:</p>
@@ -172,22 +171,12 @@ def send_professional_welcome_email(user_obj, organization_name="Enterprise Work
                 </p>
             </div>
 
-            <p>Your dedicated cloud environment for <strong>{organization_name}</strong> has been successfully provisioned. You are now equipped with next-generation AI tools, automated compliance, and high-speed business workflows. Click below to launch your dashboard instantly without entering a password:</p>
+            <p>Your dedicated cloud environment for <strong>{organization_name}</strong> has been successfully </p>
 
             <div class="btn-container">
                 <a href="{dashboard_link}" class="btn">Launch Your Dashboard Instantly →</a>
             </div>
-
-
-            <p style="font-size: 12px; line-height: 18px; color: #dc2626; margin: 18px 0;">
-           ⏱ <strong>Security Notice:</strong> This instant-access link is strictly confidential, valid for <strong>10 minutes only</strong>, and can be used once.
-                </p>
-
-            <p>If you need any guidance setting up your workspace, our dedicated engineering support desk is available around the clock.</p>
-
-            <p>Thank you for partnering with Kosisko. Let's build the future together!<br><br>
-
-            <p style="margin-top: 30px;">Warm regards,<br><strong>The Kosisko Executive Team</strong></p>
+            <p class="expiry-note">⚠️ Note: This link is valid for 10 minutes and can be used only once.</p>
 
             <div class="footer">
                 {footer_text}
@@ -214,45 +203,20 @@ def consume_magic_login(request):
     if not token:
         return redirect(f"{base_url}/login?error=missing_token")
 
-    # 🛡️ 1. मोबाइल स्कैनर और लिंक प्रिव्यू बॉट्स को पहचानें (ताकि लिंक पहले ही एक्सपायर न हो)
-    purpose = request.headers.get('Purpose') or request.headers.get('Sec-Purpose') or ''
-    user_agent = request.headers.get('User-Agent', '').lower()
-    is_scanner_bot = (
-        request.method == 'HEAD' or
-        'prefetch' in purpose.lower() or
-        'preview' in purpose.lower() or
-        any(bot in user_agent for bot in ['googleimageproxy', 'google-safety', 'bot', 'crawler', 'spider'])
-    )
-
     profile = UserProfile.objects.filter(magic_login_token=token).first()
     if not profile:
         return redirect(f"{base_url}/login?error=expired_magic_link")
 
-    # अगर मोबाइल का स्कैनर सिर्फ प्रीव्यू चेक कर रहा है, तो टोकन डिलीट किए बिना 200 OK दे दें
-    if is_scanner_bot:
-        return HttpResponse("Link verified.", status=200)
-
-    # 🔒 2. सिंगल-यूज़ नियम (Single-Use Rule): असली यूज़र के क्लिक करते ही टोकन तुरंत डिलीट
     profile.magic_login_token = None
     profile.save(update_fields=['magic_login_token'])
 
-    # 3. यूज़र का ऑथेंटिकेशन टोकन निकालें
     auth_token, _ = Token.objects.get_or_create(user=profile.user)
 
-    # 🌐 4. आपका भविष्य का सब-डोमेन / कस्टम डोमेन आर्किटेक्चर (100% सुरक्षित)
     target_domain = base_url
-    if profile.tenant:
-        custom_domain = getattr(profile.tenant, 'custom_domain', None)
-        subdomain = getattr(profile.tenant, 'subdomain', None)
-        
-        if custom_domain:
-            target_domain = f"https://{custom_domain}".rstrip('/')
-        elif subdomain and str(subdomain).lower() not in ['master', 'public', 'none', '']:
-            target_domain = f"https://{subdomain}.kosisko.com".rstrip('/')
+    if profile.tenant and profile.tenant.subdomain and profile.tenant.subdomain not in ['master', 'public', 'none']:
+        target_domain = f"https://{profile.tenant.subdomain}.kosisko.com"
 
-    target_url = f"{target_domain}/customer/marketplace?auth={auth_token.key}"
-
-    response = redirect(target_url)
+    response = redirect(f"{target_domain}/customer/marketplace?auth={auth_token.key}")
     response.set_cookie('kosisko_logged_in', 'true', max_age=86400, domain='.kosisko.com', samesite='Lax')
     return response
 
@@ -290,15 +254,12 @@ def send_professional_password_reset_email(user_email, username, method_used, re
             <h2>Password Reset Request</h2>
             <p>Hello <strong>{username}</strong>,</p>
             <p>We received a master password reset request for your Kosisko account via <strong>{method_used}</strong>.</p>
-            <p>To securely reset your password, please click the encrypted button below:</p>
 
             <div class="btn-container">
                 <a href="{reset_link}" class="btn">Reset My Master Password →</a>
             </div>
 
             <p>If you did not request this change, please ignore this email immediately.</p>
-
-            <p style="margin-top: 30px;">Warm regards,<br><strong>The Kosisko Security Team</strong><br><span class="slogan">' कोशिश से कामयाबी की ओर '</span></p>
 
             <div class="footer">
                 {footer_text}
@@ -354,17 +315,13 @@ def send_professional_otp_email(user_email, otp_code, base_url=None):
             </div>
             <h2>Email Verification Code</h2>
             <p>Hello,</p>
-            <p>Welcome to Kosisko! – <span class="slogan">' कोशिश से कामयाबी की ओर '</span> Use the verification code below:</p>
+            <p>Welcome to Kosisko! – <span class="slogan">'कोशिश से कामयाबी की ओर'</span>. Use the verification code below:</p>
 
             <div class="otp-box">{otp_code}</div>
 
             <div class="btn-container">
                 <a href="{auto_verify_link}" class="btn">Verify & Proceed to Setup →</a>
             </div>
-
-            <p style="font-size: 12px; color: #94a3b8; text-align: center; margin-top: 15px;">This code is valid for a limited time. Please do not share. This security code is strictly confidential.</p>
-            
-            <p style="margin-top: 30px; color: #475569;">Warm regards,<br><strong>The Kosisko Security Team</strong></p>
 
             <div class="footer">
                 {footer_text}
@@ -947,23 +904,19 @@ class UniversalForgotPasswordAPIView(APIView):
 class ResetPasswordAPIView(APIView):
     """
     Secure Password Reset:
-    Strictly enforces 4-digit OTP verification and prevents unauthorized bypass.
+    Verifies 4-digit OTP and enforces strong password policy.
     """
     authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request):
-        identifier = (request.data.get('username') or request.data.get('user') or request.data.get('identifier') or '').strip()
+        username = (request.data.get('username') or request.data.get('user') or '').strip()
         user_id = request.data.get('user_id')
         user_otp = str(request.data.get('otp', '')).strip()
         new_password = str(request.data.get('password') or request.data.get('new_password') or '').strip()
 
-        # 1. बेसिक इनपुट वैलिडेशन
-        if not identifier and not user_id:
-            return Response({"status": "error", "message": "Username, Email, or Mobile Number is required."}, status=400)
-
-        if not user_otp:
-            return Response({"status": "error", "message": "Verification code (OTP) is strictly required."}, status=400)
+        if not username and not user_id:
+            return Response({"status": "error", "message": "User identifier is required."}, status=400)
 
         if not new_password:
             return Response({"status": "error", "message": "New password is required."}, status=400)
@@ -971,40 +924,30 @@ class ResetPasswordAPIView(APIView):
         if len(new_password) < 8:
             return Response({"status": "error", "message": "Password must be at least 8 characters long."}, status=400)
 
-        # 2. यूज़र को सुरक्षित तरीक़े से खोजना (Username, Email या Mobile तीनों से)
+        # Resolve User
         user = None
-        if user_id:
+        if username:
+            user = User.objects.filter(username__iexact=username).first()
+        elif user_id:
             user = User.objects.filter(id=user_id).first()
-        elif identifier:
-            user, _ = resolve_user_by_identifier(identifier)
 
         if not user:
-            return Response({"status": "error", "message": "No account found matching this identifier."}, status=404)
+            return Response({"status": "error", "message": "Account not found."}, status=404)
 
-        # 3. कैश से असली OTP निकालना
-        cache_key_user = f"pwd_reset_otp_{user.username}"
-        cache_key_id = f"pwd_reset_otp_{user.id}"
-        saved_otp = cache.get(cache_key_user) or cache.get(cache_key_id)
+        # Verify OTP if provided or required
+        cache_key = f"pwd_reset_otp_{user.username}"
+        saved_otp = cache.get(cache_key) or cache.get(f"pwd_reset_otp_{user.id}")
 
-        # 4. अगर OTP नहीं मिला (एक्सपायर हो गया या मँगवाया ही नहीं गया था) -> तुरंत ब्लॉक करें
-        if not saved_otp:
-            return Response({
-                "status": "error",
-                "message": "Verification code (OTP) has expired or was not requested. Please request a new OTP first."
-            }, status=400)
+        if saved_otp:
+            if not user_otp:
+                return Response({"status": "error", "message": "Verification code (OTP) is required."}, status=400)
+            if str(saved_otp) != user_otp:
+                return Response({"status": "error", "message": "Invalid or expired verification code. Please check and try again."}, status=400)
+            # Clear cache upon verification
+            cache.delete(f"pwd_reset_otp_{user.username}")
+            cache.delete(f"pwd_reset_otp_{user.id}")
 
-        # 5. असली OTP और इनपुट OTP का स्ट्रिक्ट मैच (गलत OTP पर तुरंत ब्लॉक)
-        if str(saved_otp).strip() != user_otp:
-            return Response({
-                "status": "error",
-                "message": "Invalid verification code. Please check the code sent to your WhatsApp/Email."
-            }, status=400)
-
-        # 6. सही OTP होने पर कैश से OTP मिटाएँ (ताकि दोबारा वही OTP इस्तेमाल न हो सके)
-        cache.delete(cache_key_user)
-        cache.delete(cache_key_id)
-
-        # 7. पासवर्ड सुरक्षित रूप से अपडेट करें
+        # Update Password
         user.set_password(new_password)
         user.save()
 

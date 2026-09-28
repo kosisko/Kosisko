@@ -170,7 +170,7 @@ EMAIL_BACKEND = 'django_ses.SESBackend'
 AWS_SES_REGION_NAME = config('AWS_SES_REGION_NAME', default='ap-south-1')
 
 # 🌟 Official Enterprise From-Address (Fixes Spam & DMARC Failures)
-DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='Kosisko Security ')
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='Kosisko ')
 SERVER_EMAIL = config('SERVER_EMAIL', default='no-reply@kosisko.com')
 
 

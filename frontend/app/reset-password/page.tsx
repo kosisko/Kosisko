@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { MASTER_BRAND } from '../../utils/brand';
 
@@ -21,7 +21,7 @@ function InnerResetContent() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-
+  const otpInputRef = useRef<HTMLInputElement | null>(null);
   const [mousePos, setMousePos] = useState({ x: -1000, y: -1000 });
 
   useEffect(() => {
@@ -35,6 +35,15 @@ function InnerResetContent() {
     };
     window.addEventListener('mousemove', handleGlobalMouseMove);
     return () => window.removeEventListener('mousemove', handleGlobalMouseMove);
+  }, []);
+
+  // 🌟 Reset Password Page Load hote hi OTP Box par Cursor aane ke liye
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      otpInputRef.current?.focus();
+    }, 150);
+
+    return () => clearTimeout(timer);
   }, []);
 
   const [brand] = useState({
@@ -117,7 +126,7 @@ function InnerResetContent() {
         <div className="text-center mb-6 flex flex-col items-center justify-center relative z-10">
           <div className="absolute w-52 h-20 bg-gradient-to-r from-amber-400/25 via-yellow-300/35 to-amber-400/25 rounded-full blur-2xl pointer-events-none animate-pulse"></div>
 
-          <div className="w-full max-w-[230px] py-4 px-6 rounded-[28px] bg-white border border-slate-200 shadow-[0_8px_25px_rgba(0,0,0,0.06)] flex items-center justify-center min-h-[90px] group cursor-pointer overflow-hidden transition-all duration-300 hover:scale-105 hover:border-amber-400 hover:shadow-[0_15px_40px_rgba(245,158,11,0.3)] relative z-10">
+          <div className="w-full max-w-[230px] py-4 px-6 rounded-[28px] bg-white border border-slate-200 shadow-[0_8px_25px_rgba(0,0,0,0.06)] flex items-center justify-center min-h-[90px] group cursor-pointer overflow-hidden transition-all duration-300 hover:scale-140 hover:border-amber-400 hover:shadow-[0_15px_40px_rgba(245,158,11,0.3)] relative z-10">
             <img
               src={brand.logoUrl}
               alt={brand.name}
@@ -178,17 +187,15 @@ function InnerResetContent() {
               )}
             </div>
             <input
+              ref={otpInputRef}
               type="text"
               required
               maxLength={4}
-              placeholder="• • • •"
+              placeholder=""
               value={otp}
               onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
               className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-3 text-center tracking-[0.5em] text-lg font-bold text-slate-900 focus:outline-none focus:border-amber-500 shadow-inner"
             />
-            <p className="text-[10px] text-slate-500 mt-1 text-center">
-              Enter the 4-digit code sent to your WhatsApp or Email
-            </p>
           </div>
 
           <div>
@@ -197,7 +204,7 @@ function InnerResetContent() {
               <input
                 type={showPassword ? "text" : "password"}
                 required
-                placeholder="••••••••"
+                placeholder=""
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500 pr-10 shadow-inner"
@@ -217,7 +224,7 @@ function InnerResetContent() {
             <input
               type={showPassword ? "text" : "password"}
               required
-              placeholder="••••••••"
+              placeholder=""
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500 shadow-inner"
@@ -227,7 +234,7 @@ function InnerResetContent() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-blue-600 active:text-white active:scale-[0.98] text-slate-950 font-black text-xs transition-none shadow-lg shadow-amber-500/25 cursor-pointer flex items-center justify-center gap-2"
+            className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-red-600 active:text-white active:scale-[0.98] text-slate-950 font-black text-xs transition-none shadow-lg shadow-amber-500/25 cursor-pointer flex items-center justify-center gap-2"
           >
             {loading ? 'Updating Password...' : 'Save New Password →'}
           </button>
