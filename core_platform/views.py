@@ -6,10 +6,12 @@ import time
 import os
 import re
 import threading
+import logging
 from urllib.parse import urlparse
 import requests
 from django.contrib.auth.models import User
 from django.core.mail import send_mail, EmailMultiAlternatives
+from django.core.mail import mail_admins
 from django.contrib.auth import logout
 from django.core.cache import cache
 from email.mime.image import MIMEImage
@@ -48,6 +50,59 @@ from .models import (
 
 # 🌟 गूगल जेमिनी पैकेज इम्पोर्ट
 from google import genai
+
+logger = logging.getLogger(__name__)
+
+def check_global_otp_circuit_breaker():
+    """प्लेटफ़ॉर्म स्तर की सुरक्षा (Circuit Breaker): 5 मिनट में 500 रिक्वेस्ट"""
+    global_key = "global_otp_count_5m"
+    current_count = cache.get(global_key, 0)
+
+    if current_count >= 500:
+        alert_lock = cache.get("circuit_breaker_alert_sent")
+        if not alert_lock:
+            try:
+                mail_admins(
+                    subject="[CRITICAL ALERT] Kosisko OTP Circuit Breaker Triggered",
+                    message=f"Platform-wide OTP surge detected: {current_count} requests in 5 minutes. Temporary protection enabled."
+                )
+            except Exception as e:
+                logger.error(f"Failed to send circuit breaker email: {e}")
+            cache.set("circuit_breaker_alert_sent", True, timeout=900)
+
+        return False, "Platform traffic unusually high. OTP dispatch is temporarily throttled for security."
+
+    if current_count == 0:
+        cache.set(global_key, 1, timeout=300)
+    else:
+        cache.incr(global_key)
+
+    return True, None
+
+
+def check_identifier_rate_limit(identifier):
+    """यूज़र स्तर की सुरक्षा: 30s कूलडाउन + 1 घंटे में 5 OTP"""
+    clean_id = str(identifier).strip().lower()
+
+    # 1. 30-सेकंड कूलडाउन की जाँच
+    cooldown_key = f"rl_cd_{clean_id}"
+    if cache.get(cooldown_key):
+        return False, "Please wait 30 seconds before requesting another verification code."
+
+    # 2. 1 घंटे के कोटे की जाँच (अधिकतम 5)
+    hourly_key = f"rl_hr_{clean_id}"
+    hourly_count = cache.get(hourly_key, 0)
+    if hourly_count >= 5:
+        return False, "Maximum verification limit reached for this hour. Please try again after 1 hour."
+
+    # सुरक्षा पास होने पर काउंटर्स सेट करें
+    cache.set(cooldown_key, True, timeout=30)
+    if hourly_count == 0:
+        cache.set(hourly_key, 1, timeout=3600)
+    else:
+        cache.incr(hourly_key)
+
+    return True, None
 
 # अस्थायी रूप से OTP स्टोर करने के लिए डिक्शनरी
 OTP_STORAGE = {}
@@ -510,6 +565,16 @@ def send_otp_api(request):
             if not email:
                 return JsonResponse({"status": "error", "message": "Email is required."}, status=400)
 
+            # -------- Email OTP सुरक्षा गार्ड --------
+            is_safe, global_err = check_global_otp_circuit_breaker()
+            if not is_safe:
+                return JsonResponse({"status": "error", "message": global_err}, status=503)
+
+            is_allowed, rate_err = check_identifier_rate_limit(email)
+            if not is_allowed:
+                return JsonResponse({"status": "error", "message": rate_err}, status=429)
+            # ----------------------------------------
+
             otp_code = str(random.randint(1000, 9999))
             OTP_STORAGE[email] = otp_code
 
@@ -904,6 +969,19 @@ class UniversalForgotPasswordAPIView(APIView):
                 "status": "error",
                 "message": "No verified contact method (mobile or email) found for this account. Please contact enterprise support."
             }, status=400)
+
+        # -------- 🛡️ Password Reset OTP सुरक्षा गार्ड --------
+        # 1. ग्लोबल सर्किट ब्रेकर (5 मिनट में 500 OTP की सीमा)
+        is_safe, global_err = check_global_otp_circuit_breaker()
+        if not is_safe:
+            return Response({"status": "error", "message": global_err}, status=503)
+
+        # 2. यूज़र रेट लिमिट (30s कूलडाउन + 1 घंटे में अधिकतम 5 रिकवरी रिक्वेस्ट)
+        # यूज़रनेम के आधार पर लॉक किया गया है ताकि ईमेल/मोबाइल बदलकर कोई स्पैम न कर सके
+        is_allowed, rate_err = check_identifier_rate_limit(user.username)
+        if not is_allowed:
+            return Response({"status": "error", "message": rate_err}, status=429)
+        # ----------------------------------------------------
 
         # 4-Digit OTP generation with 5-minute TTL
         otp_code = str(random.randint(1000, 9999))
@@ -1386,7 +1464,7 @@ def check_mobile_already_exists(clean_mobile_10):
 def _dispatch_whatsapp_async(clean_mobile_10, otp_code):
     """Background worker sending Meta template payload with button parameters."""
     token = config('META_WHATSAPP_TOKEN', default='')
-    phone_number_id = config('META_PHONE_NUMBER_ID', default='1230151333524542')
+    phone_number_id = config('META_PHONE_NUMBER_ID', default='1383104401548265')
 
     if not token or not phone_number_id:
         print("[WhatsApp Error] Meta credentials missing in environment.")
@@ -1481,6 +1559,16 @@ def send_whatsapp_otp_api(request):
                 "status": "error",
                 "message": "This mobile number is already registered. Please sign in instead."
             }, status=409)
+
+        # -------- WhatsApp OTP सुरक्षा गार्ड --------
+        is_safe, global_err = check_global_otp_circuit_breaker()
+        if not is_safe:
+            return JsonResponse({"status": "error", "message": global_err}, status=503)
+
+        is_allowed, rate_err = check_identifier_rate_limit(clean_mobile_10)
+        if not is_allowed:
+            return JsonResponse({"status": "error", "message": rate_err}, status=429)
+        # ---------------------------------------------
 
         otp_code = str(random.randint(1000, 9999))
 
