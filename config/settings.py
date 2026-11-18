@@ -5,6 +5,7 @@ Kosisko Prime SaaS Architecture Configuration (Pure Production)
 
 from pathlib import Path
 import os
+from datetime import timedelta
 from decouple import config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -36,6 +37,10 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'corsheaders',      # Next.js Frontend Connection Support
 
+    # 🌟 JWT Authentication & Token Blacklisting
+    'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
+
     # Core SaaS Infrastructure Apps
     'tenants',
     'core',
@@ -50,6 +55,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'core_platform.middleware_session.ActiveSessionEnforcerMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',  # MUST BE RIGHT AFTER SECURITY MIDDLEWARE
@@ -100,8 +106,13 @@ CHANNEL_LAYERS = {
 # Database
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': config('DB_NAME', default='kosisko_db'),
+        'USER': config('DB_USER', default='Kosisko'),
+        'PASSWORD': config('DB_PASSWORD'),
+        'HOST': config('DB_HOST'),
+        'PORT': config('DB_PORT', default='5432'),
+        'CONN_MAX_AGE': 600,
     }
 }
 
@@ -154,12 +165,21 @@ LOGIN_REDIRECT_URL = '/iot/customer/dashboard/'
 # 🌟 Django REST Framework Global Security & Permission Settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        'core_platform.authenticate.CustomJWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.TokenAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ]
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'REFRESH_TOKEN_LIFETIME': timedelta(hours=14),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
 
@@ -175,14 +195,36 @@ SERVER_EMAIL = config('SERVER_EMAIL', default='no-reply@kosisko.com')
 
 
 # ==========================================
-# PURE PRODUCTION CORS, CSRF & SESSION SETTINGS
+# PURE BANK-GRADE SECURITY, CSRF & SESSION SETTINGS
 # ==========================================
+
+# 🌟 NGINX REVERSE PROXY SSL DETECTION
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+
+# 🌟 BROWSER CLOSE & TIMEOUT SECURITY (ब्राउज़र बंद होते ही सेशन खत्म)
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True        # ब्राउज़र / पीसी बंद होते ही सेशन नष्ट
+SESSION_SAVE_EVERY_REQUEST = True             # हर ऐक्शन पर सेशन टाइमर रिफ्रेश
+SESSION_COOKIE_AGE = 43200                    # अधिकतम 12 घंटे (यदि कोई ब्राउज़र खुला भी छोड़ दे)
+
+# Cross-Subdomain Session Sharing
+SESSION_COOKIE_DOMAIN = '.kosisko.com'
+SESSION_COOKIE_HTTPONLY = True                # XSS प्रोटेक्शन (JS कुकी नहीं पढ़ सकता)
+SESSION_COOKIE_SECURE = True                  # केवल HTTPS पर ट्रांसमिट होगा
+SESSION_COOKIE_SAMESITE = 'Lax'
+
+CSRF_COOKIE_DOMAIN = '.kosisko.com'
+CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SAMESITE = 'Lax'
+
 CSRF_TRUSTED_ORIGINS = [
     "https://kosisko.com",
+    "https://www.kosisko.com",
     "https://*.kosisko.com",
 ]
 
-# Next.js Frontend Connection Support for Kosisko Domain & Subdomains
+# Next.js Frontend Connection Support
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://([a-zA-Z0-9-]+\.)?kosisko\.com$",
@@ -192,8 +234,17 @@ CORS_ALLOWED_ORIGINS = [
     "https://www.kosisko.com",
 ]
 
-# Cross-Subdomain Session Sharing
-SESSION_COOKIE_DOMAIN = '.kosisko.com'
-SESSION_COOKIE_HTTPONLY = True          # JavaScript Protection (XSS Prevention)
-SESSION_COOKIE_SECURE = True            # HTTPS Only
-SESSION_COOKIE_SAMESITE = 'Lax'
+# 🌟 BANK-GRADE ENCRYPTION & HTTP HEADERS (RBI / ISO 27001 Standard)
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'                       # क्लिकजैकिंग से 100% सुरक्षा
+SECURE_HSTS_SECONDS = 31536000                 # 1 वर्ष HSTS (ब्राउज़र को केवल HTTPS पर बाध्य करना)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+
+
+# ==========================================
+# RAZORPAY PAYMENT GATEWAY CONFIGURATION
+# ==========================================
+RAZORPAY_KEY_ID = config('RAZORPAY_KEY_ID', default='')
+RAZORPAY_KEY_SECRET = config('RAZORPAY_KEY_SECRET', default='')

@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.kosisko.app",
+      "sha256_cert_fingerprints": [
+        "78:67:89:DC:26:3A:BC:AE:8D:17:1C:DD:2A:52:0F:B1:C7:58:D2:FD:A4:33:7D:08:5C:47:22:66:95:18:A7:F8"
+      ]
+    }
+  }
+]

@@ -9,16 +9,19 @@ import threading
 import logging
 from urllib.parse import urlparse
 import requests
+import razorpay
 from django.contrib.auth.models import User
 from django.core.mail import send_mail, EmailMultiAlternatives
 from django.core.mail import mail_admins
 from django.contrib.auth import logout
 from django.core.cache import cache
 from email.mime.image import MIMEImage
+from .models import StoreBranch
 from django.conf import settings
 from django.contrib.auth import authenticate, login
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
+from pos_billing.models import Product, BranchInventory
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
@@ -28,6 +31,7 @@ from decouple import config
 from rest_framework.views import APIView
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.authtoken.models import Token
 from django.db.models import Q
@@ -52,6 +56,61 @@ from .models import (
 from google import genai
 
 logger = logging.getLogger(__name__)
+
+def attach_auth_cookies(response, user):
+    """
+    🌟 बैंक-ग्रेड शुद्ध सेशन कुकीज़ (Browser Close = Auto-Logout):
+    - max_age को पूरी तरह हटा दिया गया है ताकि कुकी हार्ड डिस्क पर सेव न हो।
+    - कुकी केवल कंप्यूटर की RAM में रहती है और ब्राउज़र/सिस्टम बंद होते ही स्वतः नष्ट हो जाती है।
+    - डोमेन '.kosisko.com' पर स्कोप है ताकि सभी सबडोमेन पर एक साथ काम करे।
+    """
+    refresh = RefreshToken.for_user(user)
+    access_token = str(refresh.access_token)
+    refresh_token = str(refresh)
+
+    cookie_domain = '.kosisko.com' if not settings.DEBUG else None
+    secure_flag = not settings.DEBUG
+
+    # 1. HttpOnly Access Token (केवल चालू सेशन के लिए)
+    response.set_cookie(
+        key='access_token',
+        value=access_token,
+        max_age=None,          # 🔒 डिस्क पर सेव नहीं होगी, ब्राउज़र बंद = टोकन खत्म
+        expires=None,
+        httponly=True,         # XSS प्रोटेक्शन
+        secure=secure_flag,    # केवल HTTPS पर
+        samesite='Lax',
+        domain=cookie_domain,
+        path='/'
+    )
+
+    # 2. HttpOnly Refresh Token (केवल चालू सेशन के लिए)
+    response.set_cookie(
+        key='refresh_token',
+        value=refresh_token,
+        max_age=None,          # 🔒 30 दिन की जगह केवल चालू सेशन
+        expires=None,
+        httponly=True,
+        secure=secure_flag,
+        samesite='Lax',
+        domain=cookie_domain,
+        path='/'
+    )
+
+    # 3. सार्वजनिक लॉगिन स्थिति फ्लैग (Next.js UI के लिए)
+    response.set_cookie(
+        key='kosisko_logged_in',
+        value='true',
+        max_age=None,          # 🔒 ब्राउज़र बंद होते ही UI फ्लैग भी खत्म
+        expires=None,
+        httponly=False,
+        secure=secure_flag,
+        samesite='Lax',
+        domain=cookie_domain,
+        path='/'
+    )
+
+    return response
 
 def check_global_otp_circuit_breaker():
     """प्लेटफ़ॉर्म स्तर की सुरक्षा (Circuit Breaker): 5 मिनट में 500 रिक्वेस्ट"""
@@ -565,7 +624,6 @@ def send_otp_api(request):
             if not email:
                 return JsonResponse({"status": "error", "message": "Email is required."}, status=400)
 
-            # -------- Email OTP सुरक्षा गार्ड --------
             is_safe, global_err = check_global_otp_circuit_breaker()
             if not is_safe:
                 return JsonResponse({"status": "error", "message": global_err}, status=503)
@@ -573,10 +631,12 @@ def send_otp_api(request):
             is_allowed, rate_err = check_identifier_rate_limit(email)
             if not is_allowed:
                 return JsonResponse({"status": "error", "message": rate_err}, status=429)
-            # ----------------------------------------
 
             otp_code = str(random.randint(1000, 9999))
-            OTP_STORAGE[email] = otp_code
+            
+            # 🌟 RAM डिक्शनरी के बजाय Cache में 5 मिनट के लिए स्टोर करें
+            cache_key = f"email_otp_{email.strip().lower()}"
+            cache.set(cache_key, otp_code, timeout=300)
 
             base_url = get_client_base_url(request)
             send_professional_otp_email(email, otp_code, base_url=base_url)
@@ -584,7 +644,7 @@ def send_otp_api(request):
             return JsonResponse({
                 "status": "success",
                 "message": "OTP sent successfully to your email.",
-                "debug_otp": otp_code
+                "debug_otp": otp_code if settings.DEBUG else None
             })
         except Exception as e:
             return JsonResponse({"status": "error", "message": str(e)}, status=500)
@@ -596,16 +656,17 @@ def verify_otp_api(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            email = data.get('email')
-            user_otp = data.get('otp')
+            email = data.get('email', '').strip().lower()
+            user_otp = str(data.get('otp', '')).strip()
 
-            stored_otp = OTP_STORAGE.get(email)
+            cache_key = f"email_otp_{email}"
+            stored_otp = cache.get(cache_key)
 
-            if stored_otp and stored_otp == user_otp:
-                del OTP_STORAGE[email]
+            if stored_otp and str(stored_otp) == user_otp:
+                cache.delete(cache_key)
                 return JsonResponse({"status": "success", "message": "OTP verified successfully."})
             else:
-                return JsonResponse({"status": "error", "message": "Invalid OTP. Please enter the correct code."}, status=400)
+                return JsonResponse({"status": "error", "message": "Invalid or expired OTP code."}, status=400)
         except Exception as e:
             return JsonResponse({"status": "error", "message": str(e)}, status=500)
     return JsonResponse({"status": "error", "message": "Invalid method"}, status=405)
@@ -711,36 +772,40 @@ def api_login(request):
             if not identifier or not password:
                 return JsonResponse({"status": "error", "message": "Identifier and password are required."}, status=400)
 
-            user_obj = User.objects.filter(
-                Q(username__iexact=identifier) |
-                Q(email__iexact=identifier) |
-                Q(profile__mobile_number=identifier)
-            ).first()
+            # 🌟 1. स्मार्ट व सुरक्षित लुकअप (ज़ीरो डेटाबेस लैग)
+            clean_digits = ''.join(filter(str.isdigit, identifier))
 
-            if user_obj is not None:
-                authenticated_user = authenticate(username=user_obj.username, password=password)
-                if authenticated_user is not None:
-                    profile = getattr(user_obj, 'profile', None)
-                    is_completed = profile.is_profile_completed if profile else False
-                    role = profile.role if profile else 'customer'
-
-                    auth_token, _ = Token.objects.get_or_create(user=user_obj)
-
-                    return JsonResponse({
-                        "status": "success",
-                        "message": "Login successful",
-                        "token": auth_token.key,
-                        "username": user_obj.username,
-                        "email": user_obj.email,
-                        "role": role,
-                        "is_profile_completed": is_completed
-                    })
-                else:
-                    return JsonResponse({"status": "error", "message": "Invalid password."}, status=401)
+            if '@' in identifier:
+                # ईमेल से सीधा लुकअप
+                user_obj = User.objects.filter(email__iexact=identifier).first()
+            elif len(clean_digits) >= 10:
+                # मोबाइल नंबर (+91 या सामान्य 10 अंक दोनों से मिलान)
+                last_10 = clean_digits[-10:]
+                user_obj = User.objects.filter(
+                    Q(profile__mobile_number__icontains=last_10) |
+                    Q(username__iexact=identifier)
+                ).select_related('profile').first()
             else:
-                return JsonResponse({"status": "error", "message": "User not found. Please sign up."}, status=404)
+                # यूज़रनेम से लुकअप
+                user_obj = User.objects.filter(username__iexact=identifier).first()
+
+            # 🌟 2. पासवर्ड सत्यापन और सिंगल-राउंडट्रिप ऑथेंटिकेशन
+            if user_obj is not None:
+                if user_obj.is_active and user_obj.check_password(password):
+                    # वर्कस्पेस पेलोड
+                    payload = resolve_user_workspace_payload(user_obj)
+                    res = JsonResponse(payload)
+
+                    # 🔒 बैंक-ग्रेड शुद्ध सेशन कुकीज़
+                    attach_auth_cookies(res, user_obj)
+                    return res
+                else:
+                    return JsonResponse({"status": "error", "message": "Invalid password. Please try again."}, status=401)
+            else:
+                return JsonResponse({"status": "error", "message": "No account found with this identifier. Please sign up."}, status=404)
 
         except Exception as e:
+            logger.error(f"Manual Login Error: {str(e)}")
             return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
     return JsonResponse({"status": "error", "message": "Invalid method"}, status=405)
@@ -875,63 +940,133 @@ def verify_otp_and_register(request):
 
 @csrf_exempt
 def api_logout(request):
+    """
+    🌟 बैंक-ग्रेड मल्टी-टेनेंट लॉगआउट:
+    1. SimpleJWT Refresh Token को डेटाबेस में ब्लैकलिस्ट करता है।
+    2. लिगेसी DRF Auth Token को साफ़ करता है।
+    3. वाइल्डकार्ड (.kosisko.com), लोकल होस्ट और कस्टम डोमेन तीनों से कुकीज़ को 100% वाइप करता है।
+    """
     if request.method == 'POST':
         try:
+            # 1. कुकी या बॉडी से Refresh Token निकालकर ब्लैकलिस्ट करें
+            refresh_token = request.COOKIES.get('refresh_token')
+            if not refresh_token and request.body:
+                try:
+                    body_data = json.loads(request.body)
+                    refresh_token = body_data.get('refresh') or body_data.get('refresh_token')
+                except Exception:
+                    pass
+
+            if refresh_token:
+                try:
+                    token = RefreshToken(refresh_token)
+                    # टोकन से यूजर आईडी निकालकर लिगेसी टोकन भी मिटाएँ
+                    user_id = token.payload.get('user_id')
+                    if user_id:
+                        Token.objects.filter(user_id=user_id).delete()
+                    token.blacklist()
+                except Exception:
+                    pass
+
+            # 2. यदि रिक्वेस्ट में ऑथेंटिकेटेड यूज़र मौजूद है तो टोकन मिटाएँ
+            if request.user and request.user.is_authenticated:
+                try:
+                    Token.objects.filter(user=request.user).delete()
+                except Exception:
+                    pass
+
+            # 3. Django सेशन साफ़ करें
             logout(request)
-            return JsonResponse({"status": "success", "message": "Logged out successfully."})
+
+            response = JsonResponse({"status": "success", "message": "Logged out successfully."})
+
+            # 🌟 4. डायनामिक डोमेन निर्धारण (kosisko सबडोमेन या कस्टम डोमेन)
+            host = request.get_host().split(':')[0].lower()
+            if host.endswith('kosisko.com'):
+                cookie_domain = '.kosisko.com' if not settings.DEBUG else None
+            else:
+                cookie_domain = f".{host}" if '.' in host else None
+
+            # 🌟 5. मिटाने योग्य सभी सुरक्षा व स्टेट कुकीज़
+            cookies_to_delete = [
+                'access_token',
+                'refresh_token',
+                'kosisko_logged_in',
+                'kosisko_active_branch',
+                'sessionid',
+                'csrftoken'
+            ]
+
+            for cookie_name in cookies_to_delete:
+                # A. वाइल्डकार्ड डोमेन से डिलीट (Domain-wide Wipe)
+                if cookie_domain:
+                    response.delete_cookie(cookie_name, domain=cookie_domain, path='/', samesite='Lax')
+                
+                # B. लोकल होस्ट से डिलीट (Host-only Fallback Wipe)
+                response.delete_cookie(cookie_name, path='/', samesite='Lax')
+
+            return response
+            
         except Exception as e:
+            logger.error(f"Logout Error: {str(e)}")
             return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
     return JsonResponse({"status": "error", "message": "Invalid method"}, status=405)
 
 
 class BrandingConfigView(APIView):
+    """
+    डायनामिक मल्टी-टेनेंट ब्रांडिंग इंजन:
+    1. यह पब्लिक एंडपॉइंट है (AllowAny) ताकि लॉगिन/स्टोरफ्रंट पेजों पर बिना ऑथेंटिकेशन के लोगो दिख सके।
+    2. यह सबडोमेन (ratan.kosisko.com) और कस्टम डोमेन को ऑटोमैटिक पहचानता है।
+    3. यदि कोई टेनेंट नहीं मिलता, तो Kosisko की डिफ़ॉल्ट ब्रांडिंग दिखाता है।
+    """
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
     def get(self, request):
-        tenant_id = request.GET.get('tenant_id')
-        try:
-            tenant_obj = Tenant.objects.get(id=tenant_id)
-            branding_data = tenant_obj.get_branding_details()
-        except Tenant.DoesNotExist:
+        tenant_obj = None
+
+        # A. सबसे पहले GlobalTenantMiddleware द्वारा पहचाने गए request.tenant को देखें
+        if hasattr(request, 'tenant') and request.tenant:
+            tenant_obj = request.tenant
+
+        # B. यदि मिडलवेयर से नहीं मिला, तो URL क्वेरी (subdomain या tenant_id) से खोजें
+        if not tenant_obj:
+            subdomain = request.GET.get('subdomain')
+            tenant_id = request.GET.get('tenant_id')
+
+            if subdomain:
+                tenant_obj = Tenant.objects.filter(subdomain__iexact=subdomain.strip(), is_active=True).first()
+            elif tenant_id:
+                try:
+                    tenant_obj = Tenant.objects.filter(id=int(tenant_id), is_active=True).first()
+                except (ValueError, TypeError):
+                    tenant_obj = None
+
+        # C. टेनेंट मिलने पर उसकी कस्टमाइज़्ड ब्रांडिंग दें
+        if tenant_obj:
+            if hasattr(tenant_obj, 'get_branding_details'):
+                branding_data = tenant_obj.get_branding_details()
+            else:
+                branding_data = {
+                    "company_name": getattr(tenant_obj, 'company_name', tenant_obj.name),
+                    "brand_name": getattr(tenant_obj, 'custom_brand_name', tenant_obj.name),
+                    "tagline": getattr(tenant_obj, 'tagline', "कोशिश से कामयाबी की ओर"),
+                    "logo_url": tenant_obj.logo.url if getattr(tenant_obj, 'logo', None) else "/Logo.jpg",
+                    "is_whitelabel": getattr(tenant_obj, 'is_whitelabel_active', False)
+                }
+        else:
+            # D. डिफ़ॉल्ट मास्टर ब्रांडिंग (Kosisko)
             branding_data = {
-                "company_name": "Cosisko Ventures Private Limited",
+                "company_name": "Kosisko Ventures Private Limited",
                 "brand_name": "KOSISKO",
                 "tagline": "कोशिश से कामयाबी की ओर",
                 "logo_url": "/Logo.jpg",
                 "is_whitelabel": False
             }
+
         return Response(branding_data)
-
-
-class UniversalLoginAPIView(APIView):
-    authentication_classes = []
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        identifier = request.data.get('identifier') or request.data.get('email')
-        password = request.data.get('password')
-
-        if not identifier or not password:
-            return Response({"error": "Please provide your identifier and password."}, status=400)
-
-        user_obj = User.objects.filter(
-            Q(username=identifier) |
-            Q(email=identifier) |
-            Q(profile__mobile_number=identifier)
-        ).first()
-
-        if not user_obj:
-            return Response({"error": "No account found with this username, email, or mobile number."}, status=404)
-
-        user = authenticate(username=user_obj.username, password=password)
-
-        if user is not None:
-            return Response({
-                "status": "success",
-                "message": "Login successful!",
-                "username": user.username,
-                "email": user.email
-            })
-        else:
-            return Response({"error": "Invalid password. Please try again."}, status=400)
 
 
 class UniversalForgotPasswordAPIView(APIView):
@@ -1170,14 +1305,16 @@ class CreateWorkspaceSubdomainView(APIView):
                 profile, _ = UserProfile.objects.get_or_create(user=request.user)
                 profile.tenant = tenant
                 profile.organization_name = workspace_name
-                profile.save(update_fields=['tenant', 'organization_name'])
+                profile.role = 'tenant_admin'  # 🌟 Dukandar ko apni dukan ka Admin banayein
+                profile.save(update_fields=['tenant', 'organization_name', 'role'])
 
             workspace_url = f"https://{subdomain}.kosisko.com/customer/marketplace"
             return Response({
                 "status": "success",
                 "message": "Workspace successfully provisioned!",
                 "subdomain": subdomain,
-                "workspace_url": workspace_url
+                "workspace_url": workspace_url,
+                "role": "tenant_admin"
             })
 
         except Exception as e:
@@ -1194,68 +1331,34 @@ class GoogleOAuthOnboardingView(APIView):
     def post(self, request):
         try:
             data = request.data
-            email = data.get('email', '').strip()
+            email = data.get('email', '').strip().lower()
             first_name = data.get('first_name', '').strip()
             last_name = data.get('last_name', '').strip()
+            current_tenant = getattr(request, 'tenant', None)
 
             if not email:
                 return Response({"error": "Email is required from Google Auth."}, status=400)
 
-            current_tenant = getattr(request, 'tenant', None)
             user = User.objects.filter(email__iexact=email).first()
 
+            # 🌟 1. रजिस्टर्ड यूज़र (उदा. ratan या arpit.chandrol)
             if user:
-                profile, _ = UserProfile.objects.get_or_create(user=user)
+                payload = resolve_user_workspace_payload(user)
+                payload["is_registered_user"] = True
 
-                if current_tenant and not profile.tenant:
-                    profile.tenant = current_tenant
-                    profile.save(update_fields=['tenant'])
+                res = Response(payload)
+                attach_auth_cookies(res, user)
+                return res
 
-                is_completed = profile.is_profile_completed if profile else True
-                role = profile.role if profile else 'customer'
-
-                org_name = getattr(profile, 'organization_name', None)
-                user_tenant = getattr(profile, 'tenant', None)
-                if not org_name and user_tenant:
-                    org_name = getattr(user_tenant, 'custom_brand_name', None) or getattr(user_tenant, 'name', None)
-
-                if not org_name and current_tenant:
-                    org_name = getattr(current_tenant, 'custom_brand_name', None) or getattr(current_tenant, 'name', None)
-
-                if not org_name or str(org_name).strip().lower() in ['master', 'public', 'none', '']:
-                    display_name = user.first_name or first_name or user.username
-                    org_name = f"{display_name}'s Enterprise" if display_name else "Enterprise Workspace"
-
-                try:
-                    auth_token, _ = Token.objects.get_or_create(user=user)
-                    token_key = auth_token.key
-                except Exception:
-                    token_key = f"session_{user.id}_{secrets.token_hex(6)}"
-
-                tenant_display = (
-                    getattr(user_tenant, 'name', None)
-                    if user_tenant else (getattr(current_tenant, 'name', None) if current_tenant else org_name)
-                )
-
-                return Response({
-                    "status": "success",
-                    "action": "login",
-                    "message": "Login successful via Google",
-                    "token": token_key,
-                    "organization_name": org_name,
-                    "first_name": user.first_name or first_name,
-                    "last_name": user.last_name or last_name,
-                    "username": user.username,
-                    "email": user.email,
-                    "role": role,
-                    "tenant": tenant_display or org_name,
-                    "is_profile_completed": is_completed
-                })
+            # 🌟 2. बिल्कुल नया यूज़र (उदा. kosiskoventures)
             else:
-                return Response({
+                res = Response({
                     "status": "success",
-                    "action": "onboarding_required",
-                    "message": "New user detected. Please complete registration.",
+                    "action": "signup_required",
+                    "is_registered_user": False,
+                    "requires_onboarding": True,
+                    "workspace_url": None,
+                    "message": "New account detected. Please complete registration.",
                     "prefilled_data": {
                         "email": email,
                         "first_name": first_name,
@@ -1265,7 +1368,18 @@ class GoogleOAuthOnboardingView(APIView):
                         "detected_tenant": current_tenant.name if current_tenant else None
                     }
                 })
+
+                # 🔒 सुरक्षा नियम: ब्राउज़र में अगर कोई पुरानी अधमरी कुकी बची हो, तो उसे तुरंत नष्ट करें
+                cookie_domain = '.kosisko.com' if not settings.DEBUG else None
+                for c in ['access_token', 'refresh_token', 'kosisko_logged_in', 'sessionid']:
+                    if cookie_domain:
+                        res.delete_cookie(c, domain=cookie_domain, path='/')
+                    res.delete_cookie(c, path='/')
+
+                return res
+
         except Exception as e:
+            logger.error(f"Google OAuth Error: {str(e)}")
             return Response({"error": str(e)}, status=500)
 
 
@@ -1279,7 +1393,7 @@ class CompleteGoogleSignupView(APIView):
     def post(self, request):
         try:
             data = request.data
-            email = data.get('email', '').strip()
+            email = data.get('email', '').strip().lower()
             first_name = data.get('first_name', '').strip()
             last_name = data.get('last_name', '').strip()
             username = data.get('username', '').strip().lower()
@@ -1293,13 +1407,12 @@ class CompleteGoogleSignupView(APIView):
             if len(password) < 8:
                 return Response({"error": "Master Password must be at least 8 characters long."}, status=400)
 
-            if User.objects.filter(username__iexact=username).exists():
+            # 🌟 बग फिक्स: खुद के ईमेल को छोड़कर चेक करें ताकि फॉल्स डुप्लीकेट एरर न आए
+            if User.objects.filter(username__iexact=username).exclude(email__iexact=email).exists():
                 return Response({"error": "This username is already taken. Please choose another."}, status=400)
 
             current_tenant = getattr(request, 'tenant', None)
             base_url = get_client_base_url(request)
-
-            token_key = None
             user = None
 
             with transaction.atomic():
@@ -1331,30 +1444,31 @@ class CompleteGoogleSignupView(APIView):
                     }
                 )
 
-                try:
-                    auth_token, _ = Token.objects.get_or_create(user=user)
-                    token_key = auth_token.key
-                except Exception:
-                    token_key = f"session_{user.id}_{secrets.token_hex(6)}"
-
+            # वेलकम ईमेल
             if user:
                 try:
                     send_professional_welcome_email(user, organization_name, base_url=base_url)
                 except Exception as mail_err:
                     print("Welcome email skip:", mail_err)
 
-            return Response({
+            # 🌟 JSON रिस्पॉन्स: सीधे Onboarding Wizard ट्रिगर करने के लिए फ्लैग्स जोड़ें
+            response = Response({
                 "status": "success",
                 "message": "Account successfully created!",
-                "token": token_key,
                 "organization_name": organization_name,
                 "username": user.username,
-                "role": "customer"
+                "role": "customer",
+                "requires_onboarding": True,
+                "workspace_url": None
             })
+
+            # 🔒 .kosisko.com डोमेन पर HttpOnly JWT कुकीज़ सेट करें
+            attach_auth_cookies(response, user)
+
+            return response
 
         except Exception as e:
             return Response({"error": str(e)}, status=500)
-
 
 # -----------------------------------------------------------------------------
 # 🌟 HARDWARE PASSKEY / BIOMETRIC AUTHENTICATION & SETTINGS
@@ -1371,6 +1485,7 @@ class HardwarePasskeyAuthView(APIView):
             if not identifier:
                 return Response({"error": "Username or Email is required for Biometric authentication."}, status=400)
 
+            # 1. यूज़रनेम, ईमेल या मोबाइल नंबर से यूज़र खोजें
             user = User.objects.filter(
                 Q(username__iexact=identifier) |
                 Q(email__iexact=identifier) |
@@ -1384,23 +1499,26 @@ class HardwarePasskeyAuthView(APIView):
 
             profile = getattr(user, 'profile', None)
 
-            # 🌟 यूज़र सेटिंग्स चेक: क्या पासकी ऑन (Active) है?
+            # 🌟 2. यूज़र सेटिंग्स चेक: क्या पासकी ऑन (Active) है?
             is_passkey_enabled = getattr(profile, 'is_passkey_enabled', True) if profile else True
             if not is_passkey_enabled:
                 return Response({
                     "error": "Biometric login is disabled for this account in your Settings. Please log in using your Master Password."
                 }, status=403)
 
-            auth_token, _ = Token.objects.get_or_create(user=user)
+            # 🌟 3. सिंगल सोर्स ऑफ ट्रुथ: सबडोमेन, कस्टम डोमेन, SSO टोकन और वर्कस्पेस रिज़ॉल्यूशन
+            payload = resolve_user_workspace_payload(user)
+            payload["message"] = "Biometric authentication successful."
 
-            return Response({
-                "status": "success",
-                "action": "login",
-                "message": "Biometric authentication successful.",
-                "token": auth_token.key,
-                "username": user.username
-            })
+            response = Response(payload)
+
+            # 🔒 4. बैंक-ग्रेड शुद्ध सेशन कुकीज़ (.kosisko.com पर इंजेक्ट करें)
+            attach_auth_cookies(response, user)
+
+            return response
+
         except Exception as e:
+            logger.error(f"Passkey Auth Error: {str(e)}")
             return Response({"error": str(e)}, status=500)
 
 
@@ -1439,7 +1557,7 @@ def check_mobile_already_exists(clean_mobile_10):
         f"91{clean_mobile_10}",
         f"+91{clean_mobile_10}"
     ]
-    
+
     # 1. Check in the User model
     user_fields = [f.name for f in User._meta.get_fields()]
     for field_name in ['mobile_number', 'phone_number', 'mobile', 'phone', 'username']:
@@ -1665,3 +1783,497 @@ def resolve_user_by_identifier(identifier):
         return user, mobile
 
     return None, None
+
+
+
+class CompleteOnboardingWizardView(APIView):
+    """
+    वर्ल्ड-क्लास टेनेंट ऑनबोर्डिंग इंजन:
+    1. Tenant (कंपनी HQ) बनाता है।
+    2. Branch 001 (HQ-001 Main Store) रजिस्टर करता है।
+    3. यूज़र को 'tenant_admin' में अपग्रेड करके पहली शाखा से लिंक करता है।
+    4. सबडोमेन URL और क्रेडेंशियल्स प्रदान करता है।
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            data = request.data
+            business_name = data.get('business_name', '').strip()
+            subdomain = data.get('subdomain', '').strip().lower()
+            category = data.get('business_category', 'apparel_fashion')
+
+            # पहली शाखा का विवरण
+            branch_name = data.get('branch_name', '').strip() or f"{business_name} - Main HQ"
+            gstin = data.get('gstin', '').strip().upper()
+            address = data.get('address', '').strip()
+            city = data.get('city', '').strip()
+            state = data.get('state', '').strip()
+            pincode = data.get('pincode', '').strip()
+            invoice_prefix = data.get('invoice_prefix', 'INV').strip().upper()
+
+            # 1. वैलिडेशन
+            subdomain = re.sub(r'[^a-z0-9-]', '', subdomain)
+            if not business_name or not subdomain or len(subdomain) < 3:
+                return Response({"error": "कंपनी का नाम और वैध सबडोमेन (कम से कम 3 अक्षर) आवश्यक हैं।"}, status=400)
+
+            reserved = [
+                'www', 'api', 'admin', 'master', 'mail', 'portal', 
+                'dashboard', 'public', 'login', 'signup', 'auth'
+            ]
+            if subdomain in reserved:
+                return Response({"error": f"'{subdomain}' एक सुरक्षित सिस्टम सबडोमेन है। कृपया कोई अन्य नाम चुनें।"}, status=400)
+
+            if Tenant.objects.filter(subdomain__iexact=subdomain).exists():
+                return Response({"error": "यह सबडोमेन पहले से किसी अन्य व्यापारी द्वारा पंजीकृत है।"}, status=400)
+
+            # 2. सुरक्षित एटॉमिक डेटाबेस प्रोविज़निंग
+            with transaction.atomic():
+                # A. Tenant (HQ) क्रिएशन
+                tenant = Tenant.objects.create(
+                    name=business_name,
+                    subdomain=subdomain,
+                    business_category=category,
+                    custom_brand_name=business_name,
+                    owner=request.user,
+                    is_active=True
+                )
+
+                # 🌟 शून्य-डेटा-एंट्री: ऑटो-कैटलॉग सीडर चलाएँ
+                try:
+                    seed_tenant_catalog(tenant, main_branch, category)
+                except Exception as seed_err:
+                    print("Catalog seed error (bypassed):", seed_err)
+
+                # B. पहली HQ शाखा (HQ-001) ऑटो-क्रिएशन
+                main_branch = StoreBranch.objects.create(
+                    tenant=tenant,
+                    branch_code="HQ-001",
+                    name=branch_name,
+                    branch_type='hq_main',
+                    gstin=gstin,
+                    invoice_prefix=invoice_prefix,
+                    address=address,
+                    city=city,
+                    state=state,
+                    pincode=pincode,
+                    is_main_branch=True,
+                    is_active=True
+                )
+
+                # C. ओनर प्रोफ़ाइल अपग्रेड (Tenant Admin + Main Branch Link)
+                profile, _ = UserProfile.objects.get_or_create(user=request.user)
+                profile.tenant = tenant
+                profile.branch = main_branch
+                profile.organization_name = business_name
+                profile.role = 'tenant_admin'
+                profile.is_profile_completed = True
+                profile.save(update_fields=['tenant', 'branch', 'organization_name', 'role', 'is_profile_completed'])
+
+            workspace_url = f"https://{subdomain}.kosisko.com/customer/marketplace"
+
+            response = Response({
+                "status": "success",
+                "message": "आपका एंटरप्राइज वर्कस्पेस सफलतापूर्वक तैयार हो गया है!",
+                "subdomain": subdomain,
+                "workspace_url": workspace_url,
+                "branch_code": main_branch.branch_code,
+                "role": "tenant_admin"
+            })
+
+            # ताज़ा कुकीज़ अटैच करें
+            attach_auth_cookies(response, request.user)
+            return response
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
+
+
+class TenantBranchManagementView(APIView):
+    """
+    1. GET: टेनेंट की सभी शाखाओं/दुकानों की सूची प्राप्त करें (Auto-Healing HQ Branch सपोर्ट के साथ)।
+    2. POST: नई शाखा/फ़्रैंचाइज़ी जोड़ें और मौजूदा प्रोडक्ट्स को नई शाखा की इन्वेंटरी में सिंक करें।
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        profile = getattr(request.user, 'profile', None)
+        # 🌟 1. यदि टेनेंट नहीं है तो 400 एरर देने के बजाय क्लीन JSON स्टेटस भेजें
+        if not profile or not profile.tenant:
+            return Response({"status": "no_tenant", "branches": []})
+
+        tenant = profile.tenant
+        branches = StoreBranch.objects.filter(tenant=tenant, is_active=True).order_by('-is_main_branch', 'branch_code')
+
+        # 🌟 2. सेल्फ़-हीलिंग: अगर दुकान में कोई शाखा नहीं है, तो स्वतः पहली 'HQ-001' बनाएँ
+        if not branches.exists():
+            main_b = StoreBranch.objects.create(
+                tenant=tenant,
+                branch_code="HQ-001",
+                name=f"{tenant.name} (Main HQ)",
+                branch_type='hq_main',
+                invoice_prefix="INV",
+                is_main_branch=True,
+                is_active=True
+            )
+            profile.branch = main_b
+            profile.save(update_fields=['branch'])
+            branches = StoreBranch.objects.filter(id=main_b.id)
+
+        data = [{
+            "id": b.id,
+            "branch_code": b.branch_code,
+            "name": b.name,
+            "branch_type": b.branch_type,
+            "gstin": b.gstin or "",
+            "invoice_prefix": b.invoice_prefix,
+            "city": b.city or "",
+            "is_main_branch": b.is_main_branch,
+            "is_current": (profile.branch_id == b.id or (not profile.branch_id and b.is_main_branch))
+        } for b in branches]
+
+        return Response({"status": "success", "branches": data})
+
+    def post(self, request):
+        profile = getattr(request.user, 'profile', None)
+        if not profile or not profile.tenant:
+            return Response({"error": "दुकान/टेनेंट की पहचान नहीं हो सकी।"}, status=400)
+
+        # केवल Tenant Admin और Super Admin को नई शाखा जोड़ने का अधिकार है
+        if profile.role not in ['tenant_admin', 'super_admin']:
+            return Response({"error": "केवल बिज़नेस ओनर नई शाखा जोड़ सकते हैं।"}, status=403)
+
+        data = request.data
+        name = data.get('name', '').strip()
+        branch_type = data.get('branch_type', 'company_owned')
+        gstin = data.get('gstin', '').strip().upper()
+        city = data.get('city', '').strip()
+        address = data.get('address', '').strip()
+        invoice_prefix = data.get('invoice_prefix', '').strip().upper()
+
+        if not name:
+            return Response({"error": "शाखा का नाम आवश्यक है।"}, status=400)
+
+        tenant = profile.tenant
+        existing_count = StoreBranch.objects.filter(tenant=tenant).count()
+        next_code = f"BR-{(existing_count + 1):03d}"
+
+        if not invoice_prefix:
+            invoice_prefix = f"INV{existing_count + 1}"
+
+        with transaction.atomic():
+            # A. नई शाखा बनाएँ
+            new_branch = StoreBranch.objects.create(
+                tenant=tenant,
+                branch_code=next_code,
+                name=name,
+                branch_type=branch_type,
+                gstin=gstin,
+                invoice_prefix=invoice_prefix,
+                city=city,
+                address=address,
+                is_main_branch=False,
+                is_active=True
+            )
+
+            # 🌟 B. इन्वेंटरी ऑटो-सिंक: कंपनी के सभी मास्टर प्रोडक्ट्स इस नई दुकान से लिंक करें
+            tenant_products = Product.objects.filter(tenant=tenant, is_active=True)
+            new_inventories = [
+                BranchInventory(branch=new_branch, product=prod, stock=0)
+                for prod in tenant_products
+            ]
+            if new_inventories:
+                BranchInventory.objects.bulk_create(new_inventories, ignore_conflicts=True)
+
+        return Response({
+            "status": "success",
+            "message": f"नई शाखा '{name}' ({next_code}) सफलतापूर्वक जुड़ गई!",
+            "branch": {
+                "id": new_branch.id,
+                "branch_code": new_branch.branch_code,
+                "name": new_branch.name
+            }
+        })
+
+
+class SwitchActiveBranchView(APIView):
+    """
+    मालिक/मैनेजर द्वारा सक्रिय कार्य शाखा बदलना (Live Context Switcher)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        profile = getattr(request.user, 'profile', None)
+        if not profile or not profile.tenant:
+            return Response({"error": "No tenant found."}, status=400)
+
+        branch_id = request.data.get('branch_id')
+        if not branch_id:
+            return Response({"error": "Branch ID required."}, status=400)
+
+        branch = StoreBranch.objects.filter(id=branch_id, tenant=profile.tenant, is_active=True).first()
+        if not branch:
+            return Response({"error": "शाखा नहीं मिली या निष्क्रिय है।"}, status=404)
+
+        # यूज़र की प्रोफ़ाइल में सक्रिय शाखा अपडेट करें
+        profile.branch = branch
+        profile.save(update_fields=['branch'])
+
+        response = Response({
+            "status": "success",
+            "message": f"स्विच किया गया: {branch.name} ({branch.branch_code})",
+            "active_branch": {
+                "id": branch.id,
+                "branch_code": branch.branch_code,
+                "name": branch.name,
+                "invoice_prefix": branch.invoice_prefix
+            }
+        })
+
+        # कुकी में भी दर्ज करें ताकि फ़्रंटएंड तुरंत पहचान सके
+        cookie_domain = '.kosisko.com' if not settings.DEBUG else None
+        response.set_cookie('kosisko_active_branch', branch.branch_code, domain=cookie_domain, path='/')
+        return response
+
+
+# 🌟 CUSTOM DOMAIN SSO CONSUMER VIEW
+class SSOConsumeTokenView(APIView):
+    """
+    कस्टम डोमेन (उदा. ratanmart.com) SSO टोकन एक्सचेंज:
+    हैंडशेक टोकन वेरिफ़ाई करके लोकल ऑथेंटिकेशन कुकीज़ जारी करता है।
+    """
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        try:
+            sso_token = request.data.get('sso_token', '').strip()
+            if not sso_token:
+                return Response({"error": "SSO token required"}, status=400)
+
+            cache_key = f"sso_handshake_{sso_token}"
+            user_id = cache.get(cache_key)
+
+            if not user_id:
+                return Response({"error": "Invalid or expired SSO token"}, status=401)
+
+            # सिंगल-यूज़ टोकन: तुरंत नष्ट करें
+            cache.delete(cache_key)
+
+            user = User.objects.get(id=user_id)
+            res = Response({"status": "success", "message": "Custom domain authenticated successfully."})
+            
+            # ऑथेंटिकेशन कुकीज़ इंजेक्ट करें
+            attach_auth_cookies(res, user)
+            return res
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
+
+def resolve_user_workspace_payload(user):
+    """
+    🌟 सिंगल सोर्स ऑफ ट्रुथ (Custom Domain + SSO + Subdomain + Branding):
+    यह कोड Google, Password और Passkey तीनों के लिए एक समान काम करेगा।
+    """
+    profile = getattr(user, 'profile', None)
+    user_tenant = None
+
+    # 1. क्या यूज़र किसी सक्रिय दुकान का असली मालिक (Owner) है?
+    user_tenant = Tenant.objects.filter(owner=user, is_active=True).first()
+
+    # 2. यदि मालिक नहीं है, तो क्या वह दुकान का अधिकृत स्टाफ़ है?
+    if not user_tenant and profile and profile.tenant and profile.tenant.is_active:
+        if profile.role in ['tenant_admin', 'manager', 'cashier']:
+            user_tenant = profile.tenant
+
+    is_completed = profile.is_profile_completed if profile else True
+    role = profile.role if profile else 'customer'
+
+    # 3. संस्था / ब्रांड का नाम निकालें
+    org_name = getattr(profile, 'organization_name', None)
+    if not org_name and user_tenant:
+        org_name = getattr(user_tenant, 'custom_brand_name', None) or getattr(user_tenant, 'name', None)
+
+    if not org_name or str(org_name).strip().lower() in ['master', 'public', 'none', '']:
+        display_name = user.first_name or user.username
+        org_name = f"{display_name}'s Enterprise" if display_name else "Enterprise Workspace"
+
+    # 4. कस्टम डोमेन, SSO टोकन, और सबडोमेन URL निर्धारण
+    workspace_url = None
+    target_origin = None
+    is_custom_domain = False
+    sso_token = None
+    requires_onboarding = False
+
+    if user_tenant:
+        # A. यदि व्यापारी का कस्टम डोमेन सक्रिय है (उदा. ratanmart.com)
+        if getattr(user_tenant, 'custom_domain', None) and getattr(user_tenant, 'is_custom_domain_active', False):
+            is_custom_domain = True
+            target_origin = f"https://{user_tenant.custom_domain}".rstrip('/')
+            workspace_url = f"{target_origin}/customer/marketplace"
+            # 60-सेकंड वन-टाइम हैंडशेक टोकन
+            sso_token = secrets.token_urlsafe(32)
+            cache.set(f"sso_handshake_{sso_token}", user.id, timeout=60)
+
+        # B. यदि सबडोमेन है (उदा. ratan.kosisko.com)
+        elif getattr(user_tenant, 'subdomain', None):
+            target_origin = f"https://{user_tenant.subdomain}.kosisko.com"
+            workspace_url = f"{target_origin}/customer/marketplace"
+    else:
+        requires_onboarding = True
+
+    # 5. SimpleJWT टोकन निर्माण
+    try:
+        refresh = RefreshToken.for_user(user)
+        token_key = str(refresh.access_token)
+    except Exception:
+        token_key = f"session_{user.id}_{secrets.token_hex(6)}"
+
+    tenant_display = getattr(user_tenant, 'name', None) if user_tenant else org_name
+
+    # 6. संपूर्ण डेटाबेस रिस्पॉन्स
+    return {
+        "status": "success",
+        "action": "login",
+        "message": "Authenticated successfully",
+        "token": token_key,
+        "workspace_url": workspace_url,
+        "target_origin": target_origin,
+        "is_custom_domain": is_custom_domain,
+        "sso_token": sso_token,
+        "requires_onboarding": requires_onboarding,
+        "tenant_subdomain": getattr(user_tenant, 'subdomain', None),
+        "organization_name": org_name,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "username": user.username,
+        "email": user.email,
+        "role": role,
+        "tenant": tenant_display,
+        "is_profile_completed": is_completed
+    }
+
+
+# =============================================================================
+# 💳 KOSISKO ENTERPRISE PAYMENTS ENGINE (RAZORPAY LIVE INTEGRATION)
+# Handles SaaS Subscriptions & IoT Smart RO Rental Billing
+# =============================================================================
+
+def get_razorpay_client():
+    return razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
+
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def create_payment_order_api(request):
+    """
+    Creates Razorpay Live Order for SaaS Modules & IoT RO Rentals.
+    """
+    try:
+        data = request.data
+        module_slug = data.get('module_slug', 'pos_billing')
+        
+        # डिफ़ॉल्ट प्राइसिंग मैपिंग (रुपये में)
+        pricing_catalog = {
+            'pos_billing': 1999,
+            'crm_workflows': 2499,
+            'enterprise_erp': 4999,
+            'iot_ro_rental': 499,       # 🌟 IoT Smart RO Rental
+            'ro_maintenance': 299,
+            'test_order': 1             # ₹1 Live Testing
+        }
+
+        # यदि कस्टम अमाउंट भेजा गया हो तो वह लें, अन्यथा कैटलॉग से निकालें
+        amount_in_rupees = data.get('amount', pricing_catalog.get(module_slug, 1999))
+        amount_in_paise = int(float(amount_in_rupees) * 100)
+
+        client = get_razorpay_client()
+        order_payload = {
+            'amount': amount_in_paise,
+            'currency': 'INR',
+            'payment_capture': 1,
+            'notes': {
+                'module_slug': module_slug,
+                'company': 'Kosisko Ventures Private Limited',
+                'customer_user': request.user.username if request.user.is_authenticated else 'guest'
+            }
+        }
+
+        razorpay_order = client.order.create(data=order_payload)
+
+        return Response({
+            'status': 'success',
+            'order_id': razorpay_order.get('id'),
+            'amount': razorpay_order.get('amount'),
+            'currency': razorpay_order.get('currency'),
+            'key_id': settings.RAZORPAY_KEY_ID,
+            'module_slug': module_slug
+        }, status=200)
+
+    except Exception as e:
+        logger.error(f"Razorpay Order Creation Failed: {str(e)}")
+        return Response({
+            'status': 'error',
+            'message': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def verify_payment_api(request):
+    """
+    Verifies Razorpay payment signature & unlocks tenant subscription.
+    """
+    try:
+        data = request.data
+        order_id = data.get('razorpay_order_id')
+        payment_id = data.get('razorpay_payment_id')
+        signature = data.get('razorpay_signature')
+        module_slug = data.get('module_slug')
+
+        if not order_id or not payment_id or not signature:
+            return Response({
+                'status': 'error',
+                'message': 'Missing payment verification credentials'
+            }, status=400)
+
+        client = get_razorpay_client()
+        params_dict = {
+            'razorpay_order_id': order_id,
+            'razorpay_payment_id': payment_id,
+            'razorpay_signature': signature
+        }
+
+        # RBI/Razorpay सिग्नेचर की गणितीय पुष्टि
+        client.utility.verify_payment_signature(params_dict)
+
+        # 🌟 यदि यूज़र लॉग-इन है, तो उसका मॉड्यूल अनलॉक करें
+        if request.user.is_authenticated and module_slug:
+            profile = getattr(request.user, 'profile', None)
+            tenant = profile.tenant if profile else None
+            module_obj = AppStoreModule.objects.filter(module_code=module_slug).first()
+            if tenant and module_obj:
+                TenantSubscription.objects.update_or_create(
+                    tenant=tenant,
+                    module=module_obj,
+                    defaults={'is_unlocked': True}
+                )
+
+        return Response({
+            'status': 'success',
+            'message': 'Payment signature verified successfully.'
+        }, status=200)
+
+    except razorpay.errors.SignatureVerificationError:
+        return Response({
+            'status': 'error',
+            'message': 'Invalid signature verification. Fraud check failed.'
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Payment Verification Error: {str(e)}")
+        return Response({
+            'status': 'error',
+            'message': str(e)
+        }, status=400)

@@ -2,45 +2,39 @@ from rest_framework.permissions import BasePermission
 
 class IsTenantAdmin(BasePermission):
     """
-    यह परमीशन चेक करती है कि क्या करंट यूजर अपने टेनेंट का एडमिन (Tenant Owner / Admin) है।
-    अगर वह 'tenant_admin' या 'super_admin' है, तभी अंदर आने देगा।
+    केवल Tenant Owner / Admin या Kosisko Super Admin को अनुमति देता है।
     """
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
-        
-        # सुपर एडमिन को हमेशा अनुमति है
+
         if request.user.is_superuser:
             return True
-            
+
         profile = getattr(request.user, 'profile', None)
-        if profile and profile.role in ['super_admin', 'tenant_admin']:
-            return True
-            
-        return False
+        return profile and profile.role in ['super_admin', 'tenant_admin', 'tenant_owner']
 
 
 class IsSuperAdminOnly(BasePermission):
     """
-    यह परमीशन सिर्फ 'Super Admin' के लिए है (जैसे Kosisko के मुख्य डेवलपर्स/फाउंडर्स)।
-    यह ग्लोबल प्राइसिंग, कूपन या सिस्टम-वाइड मॉड्यूल्स को मैनेज करने के लिए इस्तेमाल होगी।
+    सिर्फ Kosisko फाउंडर्स और सुपर-एडमिन के लिए।
     """
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
-            
+
         if request.user.is_superuser:
             return True
-            
+
         profile = getattr(request.user, 'profile', None)
         return profile and profile.role == 'super_admin'
 
 
 class IsSameTenantObject(BasePermission):
     """
-    डेटा लीक रोकने का सबसे बड़ा गार्ड! 
-    यह सुनिश्चित करता है कि यूजर सिर्फ उसी डेटा को देख या एडिट सके 
-    जो उसके अपने Tenant से जुड़ा हुआ है।
+    डेटा लीक प्रिवेंशन (Zero Data Leak):
+    यह ऑब्जेक्ट लेवल पर चेक करता है कि जो बिल, इनवॉइस या ग्राहक खोला जा रहा है, 
+    वह उसी टेनेंट का है या नहीं।
     """
     def has_object_permission(self, request, view, obj):
         if not request.user or not request.user.is_authenticated:
@@ -53,10 +47,10 @@ class IsSameTenantObject(BasePermission):
         if not profile or not profile.tenant:
             return False
 
-        # चेक करें कि क्या ऑब्जेक्ट का टेनेंट और यूजर का टेनेंट एक ही है
+        # मॉडल में 'tenant' या 'organization' फ़ील्ड की पुष्टि करें
         if hasattr(obj, 'tenant'):
-            return obj.tenant == profile.tenant
+            return obj.tenant_id == profile.tenant_id
         elif hasattr(obj, 'organization'):
-            return obj.organization == profile.tenant
-            
+            return obj.organization_id == profile.tenant_id
+
         return False

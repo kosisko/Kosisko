@@ -1,8 +1,30 @@
+/* Zero-Lag Mobile Touch & Hardware Acceleration */
+* {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button, a, [role="button"] {
+  transition: transform 80ms cubic-bezier(0.2, 0, 0, 1), opacity 100ms ease, background-color 120ms ease !important;
+}
+
+button:active, a:active, [role="button"]:active {
+  transform: scale(0.97);
+}
+
+html, body {
+  background-color: #020617 !important;
+  color-scheme: dark;
+  min-height: 100dvh;
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #d13838;
+  --background: #020617; /* 🌟 Pure Slate-950: अब कभी सफ़ेद झटका नहीं आएगा */
+  --foreground: #f8fafc;
 }
 
 @theme inline {
@@ -12,15 +34,55 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background-color: #020617 !important;
+  color-scheme: dark; /* ब्राउज़र को रूट लेवल पर ही डार्क मोड लॉक करने का निर्देश */
 }
 
 body {
-  background: var(--background);
+  background-color: #020617 !important;
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+}
+
+/* 🌟 Kosisko One-Time Splash Keyframes (No Restart on Hydration) */
+@keyframes logoInstantBounce {
+  0% {
+    opacity: 0;
+    transform: scale(0.2) rotate(-160deg) translateY(50px);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.1) rotate(10deg) translateY(-6px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg) translateY(0);
+  }
+}
+
+@keyframes sloganSpring {
+  0% {
+    opacity: 0;
+    transform: translateY(24px) scale(0.8);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes lineGrow {
+  0% { width: 0px; opacity: 0; }
+  100% { width: 110px; opacity: 1; }
+}
+
+@keyframes auraInstant {
+  0% { transform: scale(0.2); opacity: 0; }
+  100% { transform: scale(1.1); opacity: 0.8; }
 }

@@ -1,16 +1,35 @@
-node_modules/
-venv/
+# Environment & Secrets (NEVER push to GitHub)
 .env
-db.sqlite3
-dist/
-build/
-# Python Cache
+.env.*
+frontend/.env
+frontend/.env.*
+*.pem
+*.keystore
+
+# Python & Django
+venv/
+.venv/
 __pycache__/
 *.py[cod]
 *$py.class
+db.sqlite3
+django.log
+server.log
+*.log
+staticfiles/
+media/
 
 # Next.js & Node
-frontend/.next/
-frontend/node_modules/
 node_modules/
+frontend/node_modules/
+frontend/.next/
 ecosystem.config.js
+
+# Build & Mobile Artifacts
+dist/
+build/
+*.apk
+*.aab
+*.idsig
+*.save
+*.bak

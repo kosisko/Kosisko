@@ -1,48 +1,94 @@
-from django.http import Http404
-from tenants.models import Tenant
+import logging
+from django.http import Http404, JsonResponse, HttpResponseBadRequest
+from django.core.cache import cache
+
+# 🌟 सिंगल सोर्स ऑफ ट्रुथ
+from core_platform.models import Tenant
+
+logger = logging.getLogger(__name__)
+
+SYSTEM_RESERVED_SUBDOMAINS = {
+    'www', 'admin', 'api', 'app', 'master', 'mail',
+    'portal', 'dashboard', 'public', 'login', 'signup', 'auth'
+}
+
+# Official domains jahan tenant=None hona valid hai (Landing page, Global Admin, Login)
+OFFICIAL_DOMAINS = {
+    'kosisko.com', 'www.kosisko.com', 'localhost', '127.0.0.1'
+}
 
 class GlobalTenantMiddleware:
+    """
+    🌟 Bank-Grade Multi-Tenant & Host Security Middleware:
+    1. Super Admin impersonation support.
+    2. *.kosisko.com subdomains resolution & validation.
+    3. Custom domains secure DB/Cache validation.
+    4. Unknown/unauthorized hosts ko turant block karna.
+    """
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        # रिक्वेस्ट से होस्ट नाम प्राप्त करें (पोर्ट नंबर हटाकर, e.g. kosisko.com, tata.kosisko.com, या portal.clientdomain.com)
-        host = request.get_host().split(':')[0]
+        host = request.get_host().split(':')[0].lower()
         parts = host.split('.')
 
         request.tenant = None
         request.is_god_mode = False
 
-        # 1. Super Admin God-Mode Impersonation (सुपर एडमिन द्वारा इम्परसोनेशन)
-        if hasattr(request, 'user') and request.user.is_authenticated and request.user.is_superuser:
-            request.is_god_mode = True
+        # 1. Super Admin Impersonation (Support ke liye kisi bhi dukan ko dekhna)
+        user = getattr(request, 'user', None)
+        if user and user.is_authenticated and user.is_superuser:
             impersonate_sub = request.GET.get('impersonate')
             if impersonate_sub:
-                try:
-                    request.tenant = Tenant.objects.get(subdomain=impersonate_sub, is_active=True)
-                except Tenant.DoesNotExist:
-                    pass
+                request.is_god_mode = True
+                request.tenant = self._get_tenant_by_subdomain(impersonate_sub)
 
-        # 2. Custom Domain Resolution (कस्टम डोमेन पहचानें - e.g. portal.clientdomain.com)
+        # 2. Subdomain & Custom Domain Resolution
         if not request.tenant:
-            # यदि होस्ट मुख्य डोमेन या लोकलहोस्ट नहीं है, तो चेक करें कि क्या यह किसी क्लाइंट का कस्टम डोमेन है
-            if host not in ['kosisko.com', 'www.kosisko.com', 'localhost', '127.0.0.1']:
-                try:
-                    request.tenant = Tenant.objects.get(custom_domain=host, is_active=True)
-                except Tenant.DoesNotExist:
-                    pass
+            # A. *.kosisko.com Subdomain (e.g. ratan.kosisko.com)
+            if host.endswith('kosisko.com') and len(parts) >= 3 and not parts[0].isdigit():
+                subdomain = parts[0]
+                if subdomain not in SYSTEM_RESERVED_SUBDOMAINS:
+                    request.tenant = self._get_tenant_by_subdomain(subdomain)
+                    if not request.tenant:
+                        return self._handle_tenant_not_found(request)
 
-        # 3. Subdomain Resolution (सबडोमेन पहचानें - e.g. tata.kosisko.com)
-        if not request.tenant and len(parts) >= 3 and not parts[0].isdigit():
-            subdomain = parts[0]
-            # 'www', 'admin', 'api', 'app' जैसे सिस्टम राउट्स को छोड़कर बाकी को टेनेंट मानें
-            if subdomain not in ['www', 'admin', 'api', 'app']:
-                try:
-                    request.tenant = Tenant.objects.get(subdomain=subdomain, is_active=True)
-                except Tenant.DoesNotExist:
-                    raise Http404("Tenant domain not found or inactive.")
+            # B. Custom Domain (e.g. ratanmart.com / portal.ratankirana.com)
+            elif host not in OFFICIAL_DOMAINS:
+                request.tenant = self._get_tenant_by_custom_domain(host)
+                # 🔒 SECURITY FIX: Agar custom domain DB me active nahi mila to request turant block
+                if not request.tenant:
+                    return self._handle_tenant_not_found(request)
 
-        # 4. Main Domain / Master Fallback (मुख्य डोमेन kosisko.com के लिए request.tenant 'None' या मास्टर रहेगा)
-        
-        response = self.get_response(request)
-        return response
+        return self.get_response(request)
+
+    def _get_tenant_by_subdomain(self, subdomain):
+        cache_key = f"tenant_sub_{subdomain.lower()}"
+        tenant = cache.get(cache_key)
+        if tenant is None:
+            try:
+                tenant = Tenant.objects.get(subdomain__iexact=subdomain, is_active=True)
+                cache.set(cache_key, tenant, timeout=300)  # 5 minute high-speed cache
+            except Tenant.DoesNotExist:
+                return None
+        return tenant
+
+    def _get_tenant_by_custom_domain(self, domain):
+        cache_key = f"tenant_custom_{domain.lower()}"
+        tenant = cache.get(cache_key)
+        if tenant is None:
+            try:
+                tenant = Tenant.objects.get(custom_domain__iexact=domain, is_active=True)
+                cache.set(cache_key, tenant, timeout=300)
+            except Tenant.DoesNotExist:
+                return None
+        return tenant
+
+    def _handle_tenant_not_found(self, request):
+        # API calls ke liye clean JSON 404
+        if request.path.startswith('/api/'):
+            return JsonResponse({
+                "status": "error",
+                "message": "Tenant workspace not found or has been suspended."
+            }, status=404)
+        raise Http404("Tenant domain not found or inactive.")

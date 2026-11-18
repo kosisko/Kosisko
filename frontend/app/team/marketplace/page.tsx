@@ -90,13 +90,13 @@ export default function TeamMarketplacePage() {
         <h3 className="text-lg font-black text-white mb-2 flex items-center gap-2">
           <span>🏪</span> Business App Store
         </h3>
-        <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+        <p className="text-xs text-slate-300 max-w-2xl leading-relaxed w-full min-w-0 max-w-7xl mx-auto px-3 sm:px-6 py-4">
           अपनी जरूरत के हिसाब से ऐप्स चुनें और अनलॉक करें। जितने ऐप्स आप इस्तेमाल करेंगे, आपका सिस्टम उतना ही शक्तिशाली और मॉड्यूलर होता जाएगा।
         </p>
       </div>
 
       {/* 📦 ऐप्स ग्रिड कार्ड्स */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 w-full min-w-0">
         {apps.map((app) => (
           <div 
             key={app.id} 
