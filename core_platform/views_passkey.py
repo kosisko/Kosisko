@@ -374,8 +374,21 @@ def passkey_login_verify(request):
         access_token = str(refresh.access_token)
         refresh_token = str(refresh)
 
-        subdomain = pk_record.tenant_subdomain or 'ratan'
-        target_url = '/customer/marketplace'
+        resolved_sub = (pk_record.tenant_subdomain or '').strip().lower().replace('https://', '').replace('http://', '').split('.kosisko.com')[0].split('/')[0].strip()
+        if not resolved_sub or resolved_sub == 'ratan':
+            try:
+                from .models import UserProfile, Tenant
+                prof = UserProfile.objects.filter(user=user).select_related('tenant').first()
+                if prof and prof.tenant and prof.tenant.subdomain:
+                    resolved_sub = prof.tenant.subdomain.strip().lower()
+                else:
+                    owned_t = Tenant.objects.filter(owner=user).first()
+                    if owned_t and owned_t.subdomain:
+                        resolved_sub = owned_t.subdomain.strip().lower()
+            except Exception:
+                pass
+        subdomain = resolved_sub or 'ratan'
+        target_url = '/customer/dashboard'
 
         resp = JsonResponse({
             'status': 'success',

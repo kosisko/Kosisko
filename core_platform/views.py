@@ -58,6 +58,35 @@ from google import genai
 logger = logging.getLogger(__name__)
 
 def attach_auth_cookies(response, user):
+    try:
+        from .models import UserProfile, Tenant
+        prof = UserProfile.objects.filter(user=user).select_related('tenant').first()
+        t_obj = (prof.tenant if prof and prof.tenant else Tenant.objects.filter(owner=user).first())
+        sub_val = (getattr(t_obj, 'subdomain', '') or '').strip().lower().replace('https://', '').replace('http://', '').split('.kosisko.com')[0].split('/')[0].strip()
+        if sub_val and '.' not in sub_val and sub_val not in ['www', 'api', 'admin', 'mail', 'app', 'kosisko', 'kosisko.com', 'workspace', '__none__']:
+            response.set_cookie(
+                key='kosisko_active_tenant',
+                value=sub_val,
+                max_age=30 * 24 * 3600,
+                domain='.kosisko.com',
+                path='/',
+                samesite='Lax',
+                secure=True,
+                httponly=False,
+            )
+        else:
+            response.set_cookie(
+                key='kosisko_active_tenant',
+                value='__none__',
+                max_age=30 * 24 * 3600,
+                domain='.kosisko.com',
+                path='/',
+                samesite='Lax',
+                secure=True,
+                httponly=False,
+            )
+    except Exception:
+        pass
     """
     🌟 बैंक-ग्रेड शुद्ध सेशन कुकीज़ (Browser Close = Auto-Logout):
     - max_age को पूरी तरह हटा दिया गया है ताकि कुकी हार्ड डिस्क पर सेव न हो।
@@ -364,7 +393,7 @@ def consume_magic_login(request):
         elif subdomain and str(subdomain).lower() not in ['master', 'public', 'none', '']:
             target_domain = f"https://{subdomain}.kosisko.com".rstrip('/')
 
-    target_url = f"{target_domain}/customer/marketplace?auth={auth_token.key}"
+    target_url = f"{target_domain}/customer/dashboard?auth={auth_token.key}"
 
     response = redirect(target_url)
     response.set_cookie('kosisko_logged_in', 'true', max_age=86400, domain='.kosisko.com', samesite='Lax')
@@ -1308,7 +1337,7 @@ class CreateWorkspaceSubdomainView(APIView):
                 profile.role = 'tenant_admin'  # 🌟 Dukandar ko apni dukan ka Admin banayein
                 profile.save(update_fields=['tenant', 'organization_name', 'role'])
 
-            workspace_url = f"https://{subdomain}.kosisko.com/customer/marketplace"
+            workspace_url = f"https://{subdomain}.kosisko.com/customer/dashboard"
             return Response({
                 "status": "success",
                 "message": "Workspace successfully provisioned!",
@@ -1870,7 +1899,7 @@ class CompleteOnboardingWizardView(APIView):
                 profile.is_profile_completed = True
                 profile.save(update_fields=['tenant', 'branch', 'organization_name', 'role', 'is_profile_completed'])
 
-            workspace_url = f"https://{subdomain}.kosisko.com/customer/marketplace"
+            workspace_url = f"https://{subdomain}.kosisko.com/customer/dashboard"
 
             response = Response({
                 "status": "success",
@@ -2111,7 +2140,7 @@ def resolve_user_workspace_payload(user):
         if getattr(user_tenant, 'custom_domain', None) and getattr(user_tenant, 'is_custom_domain_active', False):
             is_custom_domain = True
             target_origin = f"https://{user_tenant.custom_domain}".rstrip('/')
-            workspace_url = f"{target_origin}/customer/marketplace"
+            workspace_url = f"{target_origin}/customer/dashboard"
             # 60-सेकंड वन-टाइम हैंडशेक टोकन
             sso_token = secrets.token_urlsafe(32)
             cache.set(f"sso_handshake_{sso_token}", user.id, timeout=60)
@@ -2119,7 +2148,7 @@ def resolve_user_workspace_payload(user):
         # B. यदि सबडोमेन है (उदा. ratan.kosisko.com)
         elif getattr(user_tenant, 'subdomain', None):
             target_origin = f"https://{user_tenant.subdomain}.kosisko.com"
-            workspace_url = f"{target_origin}/customer/marketplace"
+            workspace_url = f"{target_origin}/customer/dashboard"
     else:
         requires_onboarding = True
 
@@ -2277,3 +2306,174 @@ def verify_payment_api(request):
             'status': 'error',
             'message': str(e)
         }, status=400)
+
+
+# -----------------------------------------------------------------------------
+# USER & ENTERPRISE PROFILE SETTINGS API (/api/v1/auth/profile/)
+# -----------------------------------------------------------------------------
+class UserProfileSettingsView(APIView):
+    permission_classes = [AllowAny]
+
+    def _serialize(self, user):
+        from .models import UserProfile, Tenant
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        tenant = profile.tenant or Tenant.objects.filter(owner=user).first()
+        if tenant and not profile.tenant:
+            profile.tenant = tenant
+            profile.save(update_fields=['tenant'])
+
+        branches_data = []
+        if tenant:
+            for b in tenant.branches.filter(is_active=True).order_by('-is_main_branch', 'id'):
+                branches_data.append({
+                    'id': b.id,
+                    'branch_code': b.branch_code,
+                    'name': b.name,
+                    'city': b.city or '',
+                    'gstin': b.gstin or '',
+                    'is_main_branch': b.is_main_branch,
+                })
+
+        return {
+            'status': 'success',
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email or '',
+                'first_name': user.first_name or '',
+                'last_name': user.last_name or '',
+                'date_joined': user.date_joined.strftime('%d %b %Y') if user.date_joined else '',
+            },
+            'profile': {
+                'studio_preferences': profile.studio_preferences or {},
+                'role': profile.role,
+                'role_display': profile.get_role_display(),
+                'mobile_number': profile.mobile_number or '',
+                'is_mobile_verified': profile.is_mobile_verified,
+                'organization_name': profile.organization_name or (tenant.name if tenant else ''),
+                'gst_number': profile.gst_number or '',
+                'business_address': profile.business_address or '',
+                'is_profile_completed': profile.is_profile_completed,
+            },
+            'tenant': {
+                'id': tenant.id,
+                'name': tenant.name,
+                'subdomain': tenant.subdomain,
+                'custom_domain': tenant.custom_domain or '',
+                'business_category': tenant.business_category,
+                'business_category_display': tenant.get_business_category_display(),
+                'max_branches': tenant.max_branches,
+                'max_users': tenant.max_users,
+                'is_paid': tenant.is_paid,
+                'has_whitelabel_subscription': tenant.has_whitelabel_subscription,
+                'branches': branches_data,
+            } if tenant else None,
+            'business_categories': [
+                {'value': code, 'label': label} for code, label in Tenant.BUSINESS_CATEGORIES
+            ],
+        }
+
+    def get(self, request):
+        from .views_passkey import get_request_user
+        user = get_request_user(request)
+        if not user:
+            return Response({'error': 'Authentication required.'}, status=401)
+        return Response(self._serialize(user), status=200)
+
+    def patch(self, request):
+        from django.db import IntegrityError
+        from .views_passkey import get_request_user
+        from .models import UserProfile, Tenant
+
+        user = get_request_user(request)
+        if not user:
+            return Response({'error': 'Authentication required.'}, status=401)
+
+        data = request.data or {}
+        if 'studio_preferences' in data and isinstance(data['studio_preferences'], dict):
+            profile.studio_preferences = data['studio_preferences']
+            profile.save(update_fields=['studio_preferences'])
+            if len(data.keys()) == 1:
+                return Response(self._serialize(user), status=200)
+        first_name = str(data.get('first_name', user.first_name or '')).strip()
+        last_name = str(data.get('last_name', user.last_name or '')).strip()
+        mobile = str(data.get('mobile_number', '')).strip() or None
+        org_name = str(data.get('organization_name', '')).strip()
+        gst_number = str(data.get('gst_number', '')).strip().upper() or None
+        business_address = str(data.get('business_address', '')).strip() or None
+        business_category = str(data.get('business_category', '')).strip()
+
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        tenant = profile.tenant or Tenant.objects.filter(owner=user).first()
+
+        try:
+            user.first_name = first_name
+            user.last_name = last_name
+            user.save(update_fields=['first_name', 'last_name'])
+
+            profile.mobile_number = mobile
+            if org_name:
+                profile.organization_name = org_name
+            profile.gst_number = gst_number
+            profile.business_address = business_address
+            profile.is_profile_completed = True
+            profile.save()
+
+            if tenant and (profile.role in ('tenant_admin', 'super_admin') or tenant.owner_id == user.id):
+                tenant_updates = []
+                if org_name and tenant.name != org_name:
+                    tenant.name = org_name
+                    tenant.custom_brand_name = org_name
+                    tenant_updates.extend(['name', 'custom_brand_name'])
+                valid_cats = dict(Tenant.BUSINESS_CATEGORIES)
+                if business_category in valid_cats and tenant.business_category != business_category:
+                    tenant.business_category = business_category
+                    tenant_updates.append('business_category')
+                if tenant_updates:
+                    tenant.save(update_fields=tenant_updates)
+        except IntegrityError:
+            return Response(
+                {'error': 'This mobile number is already linked to another account.'},
+                status=400
+            )
+        except Exception as e:
+            return Response({'error': str(e)}, status=400)
+
+        payload = self._serialize(user)
+        payload['message'] = 'Profile & workspace settings updated successfully.'
+        return Response(payload, status=200)
+
+    def post(self, request):
+        return self.patch(request)
+
+
+class KosiskoAIIntentView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        data = request.data or {}
+        transcript = str(data.get('transcript', '')).strip()
+        q = transcript.lower()
+        action = transcript
+        msg = f'AI Co-Pilot executed: {transcript}'
+
+        if any(k in q for k in ['sale', 'सेल', 'invoice', 'बिल', 'express']):
+            action = 'record_sale'
+            msg = 'Express POS Sale recorded & settled.'
+        elif any(k in q for k in ['market', 'store', 'मार्केट', 'ऐप']):
+            action = 'open_marketplace'
+            msg = 'Opening App Marketplace.'
+        elif any(k in q for k in ['profile', 'प्रोफाइल']):
+            action = 'open_profile'
+            msg = 'Opening Profile Settings.'
+        elif any(k in q for k in ['security', 'passkey', 'सिक्योरिटी', 'पासकी']):
+            action = 'open_security'
+            msg = 'Opening FIDO2 Security Hub.'
+        elif any(k in q for k in ['dashboard', 'डैशबोर्ड']):
+            action = 'open_dashboard'
+            msg = 'Opening Command Dashboard.'
+        elif any(k in q for k in ['theme', 'studio', 'थीम', 'स्टूडियो']):
+            action = 'open_customizer'
+            msg = 'Opening Studio Customizer.'
+
+        return Response({'status': 'success', 'action': action, 'message': msg}, status=200)

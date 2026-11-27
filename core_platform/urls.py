@@ -30,7 +30,9 @@ from .views import (
     TogglePasskeyStatusView,
     BrandingConfigView,
     create_payment_order_api,
-    verify_payment_api
+    verify_payment_api,
+    UserProfileSettingsView,
+    KosiskoAIIntentView
 )
 
 urlpatterns = [
@@ -69,6 +71,8 @@ urlpatterns = [
     path('api/v1/tenant/onboarding/complete/', CompleteOnboardingWizardView.as_view(), name='complete-onboarding'),
     path('api/v1/auth/verify-otp/', verify_otp_api, name='verify_otp_api'),
     path('api/v1/auth/logout/', api_logout, name='api_logout'),
+    re_path(r'^api/v1/auth/profile/?$', UserProfileSettingsView.as_view(), name='user_profile_settings'),
+    re_path(r'^api/v1/ai-intent/?$', KosiskoAIIntentView.as_view(), name='kosisko_ai_intent'),
     path('api/v1/auth/forgot-password/', UniversalForgotPasswordAPIView.as_view(), name='universal_forgot_password'),
     path('api/v1/auth/reset-password/', ResetPasswordAPIView.as_view(), name='reset_password'),
     path('api/v1/auth/whatsapp/send-otp/', send_whatsapp_otp_api, name='send_whatsapp_otp'),

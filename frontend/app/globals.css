@@ -1,88 +1,423 @@
-/* Zero-Lag Mobile Touch & Hardware Acceleration */
-* {
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-}
-
-button, a, [role="button"] {
-  transition: transform 80ms cubic-bezier(0.2, 0, 0, 1), opacity 100ms ease, background-color 120ms ease !important;
-}
-
-button:active, a:active, [role="button"]:active {
-  transform: scale(0.97);
-}
-
-html, body {
-  background-color: #020617 !important;
-  color-scheme: dark;
-  min-height: 100dvh;
-  overscroll-behavior-y: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
 @import "tailwindcss";
 
+@property --beam-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
 :root {
-  --background: #020617; /* 🌟 Pure Slate-950: अब कभी सफ़ेद झटका नहीं आएगा */
-  --foreground: #f8fafc;
+  --accent: #F59E0B;
+  --accent-rgb: 245, 158, 11;
+  --accent-contrast: #07090E;
+
+  --bg-outer: #030407;
+  --bg-base: #07090E;
+  --text-primary: #F8FAFC;
+  --text-muted: #94A3B8;
+  --text-subtle: #64748B;
+
+  --sidebar-bg: rgba(13, 17, 27, 0.94);
+  --sidebar-text: #F8FAFC;
+  --sidebar-muted: #94A3B8;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+
+  --topbar-bg: rgba(13, 17, 27, 0.92);
+  --topbar-text: #F8FAFC;
+  --topbar-muted: #94A3B8;
+  --topbar-border: rgba(255, 255, 255, 0.08);
+
+  --surface-1: rgba(13, 17, 27, 0.90);
+  --surface-2: rgba(19, 25, 39, 0.88);
+  --surface-input: rgba(9, 12, 20, 0.94);
+  --surface-popover: rgba(15, 20, 32, 0.98);
+  --card-text: #F8FAFC;
+  --card-muted: #94A3B8;
+
+  --border-color: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --specular-edge: rgba(255, 255, 255, 0.09);
+  --card-shadow: 0 22px 48px -16px rgba(0, 0, 0, 0.72);
+
+  --bg-pattern-image: none;
+  --bg-pattern-size: 28px 28px;
+  --bg-pattern-opacity: 1;
+
+  --wallpaper-image: none;
+  --wallpaper-opacity: 0.45;
+
+  --os-font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  --os-font-size: 14px;
+  --os-font-weight: 400;
+  --os-font-style: normal;
+
+  --radius-card: 16px;
+  --glass-blur: 18px;
+  --anim-speed: 220ms;
+  --anim-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --beam-speed: 4.2s;
+  --card-pad: 20px;
+  --grid-gap: 16px;
+  --sidebar-width: 252px;
+  --header-title-size: 26px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.kosisko-os-shell {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--os-font-family);
+  font-size: var(--os-font-size);
+  font-weight: var(--os-font-weight);
+  font-style: var(--os-font-style);
 }
 
-html {
-  background-color: #020617 !important;
-  color-scheme: dark; /* ब्राउज़र को रूट लेवल पर ही डार्क मोड लॉक करने का निर्देश */
+body.has-wallpaper .kosisko-os-shell {
+  background-color: transparent !important;
 }
 
-body {
-  background-color: #020617 !important;
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-  min-height: 100vh;
+.bg-os-wallpaper {
+  background-image: var(--wallpaper-image);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: var(--wallpaper-opacity);
+  transition: opacity 240ms ease;
 }
 
-/* 🌟 Kosisko One-Time Splash Keyframes (No Restart on Hydration) */
-@keyframes logoInstantBounce {
-  0% {
-    opacity: 0;
-    transform: scale(0.2) rotate(-160deg) translateY(50px);
-  }
-  70% {
-    opacity: 1;
-    transform: scale(1.1) rotate(10deg) translateY(-6px);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1) rotate(0deg) translateY(0);
-  }
+.bg-os-base { background-color: var(--bg-base); }
+.bg-os-texture {
+  background-image: var(--bg-pattern-image);
+  background-size: var(--bg-pattern-size);
+  opacity: var(--bg-pattern-opacity);
+}
+.bg-os-s1 { background-color: var(--surface-1); }
+.bg-os-s2 { background-color: var(--surface-2); }
+
+.zone-sidebar {
+  background-color: var(--sidebar-bg);
+  color: var(--sidebar-text);
+  border-color: var(--sidebar-border);
+}
+.text-sb-primary { color: var(--sidebar-text); }
+.text-sb-muted { color: var(--sidebar-muted); }
+
+.zone-topbar {
+  background-color: var(--topbar-bg);
+  color: var(--topbar-text);
+  border-color: var(--topbar-border);
+}
+.text-tb-primary { color: var(--topbar-text); }
+.text-tb-muted { color: var(--topbar-muted); }
+
+.text-card-primary { color: var(--card-text); }
+.text-card-muted { color: var(--card-muted); }
+
+.bg-os-input {
+  background-color: var(--surface-input);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+.bg-os-input:focus {
+  outline: none;
+  border-color: rgba(var(--accent-rgb), 0.72);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.16);
 }
 
-@keyframes sloganSpring {
-  0% {
-    opacity: 0;
-    transform: translateY(24px) scale(0.8);
-  }
-  70% {
-    opacity: 1;
-    transform: translateY(-4px) scale(1.04);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+.border-os { border-color: var(--border-color); }
+.border-os-strong { border-color: var(--border-strong); }
+
+.text-os-primary { color: var(--text-primary); }
+.text-os-muted { color: var(--text-muted); }
+.text-os-subtle { color: var(--text-subtle); }
+.text-os-accent { color: var(--accent); }
+
+.bg-os-accent {
+  background-color: var(--accent);
+  color: var(--accent-contrast);
+  position: relative;
+  overflow: hidden;
+}
+.bg-os-accent:hover {
+  filter: brightness(1.07);
+  box-shadow: 0 10px 26px -6px rgba(var(--accent-rgb), 0.48);
 }
 
-@keyframes lineGrow {
-  0% { width: 0px; opacity: 0; }
-  100% { width: 110px; opacity: 1; }
+.pill-os-accent {
+  background-color: rgba(var(--accent-rgb), 0.15);
+  border: 1px solid rgba(var(--accent-rgb), 0.38);
+  color: var(--accent);
 }
 
-@keyframes auraInstant {
-  0% { transform: scale(0.2); opacity: 0; }
-  100% { transform: scale(1.1); opacity: 0.8; }
+.os-page-title {
+  font-size: var(--header-title-size);
+  line-height: 1.2;
+}
+
+.workspace-container {
+  width: 100%;
+  transition: max-width 220ms ease;
+}
+body.workspace-centered .workspace-container {
+  max-width: 1080px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.os-card {
+  position: relative;
+  background-color: var(--surface-2);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-card);
+  color: var(--card-text);
+  overflow: hidden;
+  transition: background-color var(--anim-speed) ease, border-color var(--anim-speed) ease, transform var(--anim-speed) var(--anim-ease), box-shadow var(--anim-speed) ease;
+}
+.os-card-pad { padding: var(--card-pad); }
+
+.feat-glass .os-card {
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: inset 0 1px 0 var(--specular-edge), var(--card-shadow);
+}
+.feat-glass .os-card:hover { border-color: rgba(var(--accent-rgb), 0.36); }
+
+/* Animation Switch 2: 3D Magnetic Card Hover & Lift */
+.feat-magnetic .os-card-lift:hover {
+  transform: translateY(-4px) scale(1.008);
+  box-shadow: 0 24px 52px -12px rgba(var(--accent-rgb), 0.22), var(--card-shadow);
+}
+
+/* Animation Switch 3: Live Shimmer & Pulse Sweep */
+@keyframes kosiskoShimmerSweep {
+  0% { transform: translateX(-140%) skewX(-18deg); }
+  55%, 100% { transform: translateX(240%) skewX(-18deg); }
+}
+.feat-shimmer .bg-os-accent::before,
+.feat-shimmer .conic-beam-hero::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.24), transparent);
+  animation: kosiskoShimmerSweep 4.2s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Complete Card Border Removal */
+body.no-card-borders .os-card {
+  border-width: 0px !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+body.no-card-borders .os-card::after {
+  display: none !important;
+}
+body.no-card-borders .os-card .border,
+body.no-card-borders .os-card .border-b,
+body.no-card-borders .os-card .border-t {
+  border-color: transparent !important;
+}
+
+.spotlight-target {
+  position: relative;
+  overflow: hidden;
+}
+.spotlight-target::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  background: radial-gradient(260px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(var(--accent-rgb), 0.13), transparent 72%);
+  z-index: 1;
+}
+.feat-spotlight .spotlight-target:hover::before { opacity: 1; }
+
+@keyframes kosiskoBeamSpin {
+  0% { --beam-angle: 0deg; }
+  100% { --beam-angle: 360deg; }
+}
+
+.os-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 220ms ease;
+  background: conic-gradient(
+    from var(--beam-angle),
+    transparent 0deg,
+    transparent 245deg,
+    rgba(var(--accent-rgb), 0.95) 312deg,
+    rgba(56, 189, 248, 0.8) 344deg,
+    transparent 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  z-index: 3;
+}
+
+body.beam-mode-off .os-card::after { opacity: 0; animation: none; }
+body.beam-mode-hero .os-card.conic-beam-hero::after { opacity: 1; animation: kosiskoBeamSpin var(--beam-speed) linear infinite; }
+body.beam-mode-all .os-card::after { opacity: 1; animation: kosiskoBeamSpin var(--beam-speed) linear infinite; }
+body.beam-mode-custom .os-card.beam-pinned::after { opacity: 1; animation: kosiskoBeamSpin var(--beam-speed) linear infinite; }
+
+.beam-pin-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--surface-input);
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+body.beam-mode-custom .beam-pin-btn { display: inline-flex; }
+.os-card.beam-pinned .beam-pin-btn {
+  background-color: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+}
+
+.os-popover {
+  background-color: var(--surface-popover);
+  border: 1px solid var(--border-strong);
+  border-radius: calc(var(--radius-card) * 0.9);
+  color: var(--text-primary);
+  box-shadow: inset 0 1px 0 var(--specular-edge), 0 28px 64px -12px rgba(0, 0, 0, 0.72);
+}
+
+/* Animation Switch 5: Kinetic Medallion, Sparklines & Staggered Cards */
+@keyframes kosiskoMedallionOrbit {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.feat-kinetic .k-medallion-ring {
+  transform-origin: center;
+  animation: kosiskoMedallionOrbit 18s linear infinite;
+}
+
+@keyframes kosiskoSparkDraw {
+  from { stroke-dashoffset: 220; }
+  to { stroke-dashoffset: 0; }
+}
+.feat-kinetic .sparkline-stroke {
+  stroke-dasharray: 220;
+  stroke-dashoffset: 0;
+  animation: kosiskoSparkDraw 900ms var(--anim-ease) forwards;
+}
+
+@keyframes kosiskoStaggerUp {
+  0% { opacity: 0; transform: translateY(10px) scale(0.985); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.feat-kinetic .stagger-1 { animation: kosiskoStaggerUp 260ms var(--anim-ease) both; }
+.feat-kinetic .stagger-2 { animation: kosiskoStaggerUp 260ms var(--anim-ease) 55ms both; }
+.feat-kinetic .stagger-3 { animation: kosiskoStaggerUp 260ms var(--anim-ease) 110ms both; }
+.feat-kinetic .stagger-4 { animation: kosiskoStaggerUp 260ms var(--anim-ease) 165ms both; }
+
+@keyframes kosiskoWavePulse {
+  0%, 100% { transform: scaleY(0.28); }
+  50% { transform: scaleY(1); }
+}
+.voice-bar {
+  width: 3px;
+  height: 18px;
+  border-radius: 9999px;
+  background-color: var(--accent);
+  transform-origin: center;
+  animation: kosiskoWavePulse 0.75s ease-in-out infinite;
+}
+
+.feat-zen #kosisko-business-sidebar {
+  width: 0px !important;
+  min-width: 0px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+}
+.feat-zen #kosisko-multi-tab-bar,
+.feat-zen #kosisko-pulse-ticker {
+  display: none !important;
+}
+
+input[type="range"].hue-rainbow {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 12px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%);
+  outline: none;
+  cursor: pointer;
+}
+input[type="range"].hue-rainbow::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 2.5px solid #0f172a;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  cursor: grab;
+}
+
+input[type="range"].token-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--border-strong);
+  outline: none;
+  cursor: pointer;
+}
+input[type="range"].token-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: var(--accent);
+  border: 2px solid var(--bg-base);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  cursor: grab;
+}
+
+/* ============================================================================
+   THEME-ADAPTIVE CUSTOM SCROLLBARS (NO DEFAULT WHITE BAR)
+   ============================================================================ */
+html, body, * {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(var(--accent-rgb), 0.45) var(--bg-base);
+}
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-base);
+}
+::-webkit-scrollbar-thumb {
+  background-color: rgba(var(--accent-rgb), 0.42);
+  border-radius: 9999px;
+  border: 1px solid var(--bg-base);
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--accent);
 }

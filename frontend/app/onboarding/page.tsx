@@ -1,8 +1,32 @@
 'use client';
 
+import { DEFAULT_STUDIO_STATE, applyStudioTokensToDocument } from '@/components/KosiskoStudioDrawer';
+
 import React, { useState } from 'react';
 
+function useOnboardingThemeSync() {
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem('kosisko_os_studio_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        applyStudioTokensToDocument({
+          ...DEFAULT_STUDIO_STATE,
+          ...parsed,
+          zones: { ...DEFAULT_STUDIO_STATE.zones, ...(parsed.zones || {}) },
+          features: { ...DEFAULT_STUDIO_STATE.features, ...(parsed.features || {}) },
+        });
+      } else {
+        applyStudioTokensToDocument(DEFAULT_STUDIO_STATE);
+      }
+    } catch {
+      applyStudioTokensToDocument(DEFAULT_STUDIO_STATE);
+    }
+  }, []);
+}
+
 export default function OnboardingWizardPage() {
+  useOnboardingThemeSync();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -68,7 +92,7 @@ export default function OnboardingWizardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-between selection:bg-amber-500 selection:text-black">
+    <div className="min-h-screen kosisko-os-shell bg-os-base text-white flex flex-col justify-between selection:bg-amber-500 selection:text-black">
       {/* शीर्ष हेडर */}
       <header className="px-8 py-5 border-b border-white/10 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -76,25 +100,31 @@ export default function OnboardingWizardPage() {
             K
           </div>
           <div>
-            <h1 className="text-base font-black tracking-tight text-white">Kosisko Enterprise</h1>
+            <h1 className="text-base font-black tracking-tight text-card-primary">Kosisko Enterprise</h1>
             <p className="text-[10px] text-amber-400 font-semibold uppercase tracking-wider">Smart Store Provisioning Engine</p>
           </div>
         </div>
 
-        {/* स्टेप्स इंडिकेटर */}
-        <div className="flex items-center gap-2 text-xs font-bold">
-          <span className={`px-3 py-1 rounded-full ${step >= 1 ? 'bg-amber-500 text-black' : 'bg-white/10 text-slate-400'}`}>1. ब्रांड व सबडोमेन</span>
-          <span className="text-slate-600">→</span>
-          <span className={`px-3 py-1 rounded-full ${step >= 2 ? 'bg-amber-500 text-black' : 'bg-white/10 text-slate-400'}`}>2. पहली HQ शाखा</span>
-          <span className="text-slate-600">→</span>
-          <span className={`px-3 py-1 rounded-full ${step === 3 ? 'bg-amber-500 text-black' : 'bg-white/10 text-slate-400'}`}>3. लॉन्च व एक्टिवेशन</span>
+        {/* स्टेप्स इंडिकेटर व Skip बटन */}
+        <div className="flex items-center gap-3 text-xs font-bold">
+          <a
+            href="/customer/dashboard"
+            className="px-3.5 py-2 rounded-xl bg-os-s2 hover:border-os-strong border border-os text-xs font-bold text-card-primary transition-all inline-flex items-center gap-1.5"
+          >
+            <span>Skip for Now → Dashboard</span>
+          </a>
+          <span className={`px-3 py-1 rounded-full ${step >= 1 ? 'bg-amber-500 text-black' : 'bg-white/10 text-card-muted'}`}>1. ब्रांड व सबडोमेन</span>
+          <span className="text-os-subtle">→</span>
+          <span className={`px-3 py-1 rounded-full ${step >= 2 ? 'bg-amber-500 text-black' : 'bg-white/10 text-card-muted'}`}>2. पहली HQ शाखा</span>
+          <span className="text-os-subtle">→</span>
+          <span className={`px-3 py-1 rounded-full ${step === 3 ? 'bg-amber-500 text-black' : 'bg-white/10 text-card-muted'}`}>3. लॉन्च व एक्टिवेशन</span>
         </div>
       </header>
 
       {/* मुख्य कंटेनर */}
       <main className="max-w-6xl mx-auto w-full px-6 py-10 grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
         {/* बायाँ फ़ॉर्म सेक्शन */}
-        <div className="lg:col-span-7 bg-slate-900/80 border border-white/10 rounded-3xl p-8 backdrop-blur-xl shadow-2xl">
+        <div className="lg:col-span-7 bg-os-s1 border border-white/10 rounded-3xl p-8 backdrop-blur-xl shadow-2xl">
           {errorMsg && (
             <div className="mb-6 p-4 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
               ⚠️ {errorMsg}
@@ -104,12 +134,12 @@ export default function OnboardingWizardPage() {
           {step === 1 && (
             <div className="space-y-6">
               <div>
-                <h2 className="text-2xl font-black tracking-tight text-white">दुकान या कंपनी की पहचान</h2>
-                <p className="text-xs text-slate-400 mt-1">अपने व्यापार का नाम और मनपसंद डिजिटल सबडोमेन दर्ज करें।</p>
+                <h2 className="text-2xl font-black tracking-tight text-card-primary">दुकान या कंपनी की पहचान</h2>
+                <p className="text-xs text-card-muted mt-1">अपने व्यापार का नाम और मनपसंद डिजिटल सबडोमेन दर्ज करें।</p>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-2">व्यापार का नाम (Business Name)</label>
+                <label className="block text-xs font-bold text-card-primary mb-2">व्यापार का नाम (Business Name)</label>
                 <input
                   type="text"
                   value={businessName}
@@ -120,7 +150,7 @@ export default function OnboardingWizardPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-2">डिजिटल सबडोमेन (Live Address)</label>
+                <label className="block text-xs font-bold text-card-primary mb-2">डिजिटल सबडोमेन (Live Address)</label>
                 <div className="flex items-center rounded-2xl bg-white/5 border border-white/10 overflow-hidden focus-within:border-amber-400">
                   <input
                     type="text"
@@ -129,16 +159,16 @@ export default function OnboardingWizardPage() {
                     placeholder="ratan"
                     className="flex-1 px-4 py-3 bg-transparent text-sm font-bold text-amber-400 focus:outline-none"
                   />
-                  <span className="px-4 py-3 text-xs font-bold text-slate-400 bg-white/5 border-l border-white/10">.kosisko.com</span>
+                  <span className="px-4 py-3 text-xs font-bold text-card-muted bg-white/5 border-l border-white/10">.kosisko.com</span>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-2">व्यापार की श्रेणी (Business Category)</label>
+                <label className="block text-xs font-bold text-card-primary mb-2">व्यापार की श्रेणी (Business Category)</label>
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full px-4 py-3 rounded-2xl bg-slate-900 border border-white/10 focus:border-amber-400 text-sm font-semibold text-white focus:outline-none"
+                  className="w-full px-4 py-3 rounded-2xl bg-os-s1 border border-white/10 focus:border-amber-400 text-sm font-semibold text-card-primary focus:outline-none"
                 >
                   <option value="grocery_supermarket">🛒 किराना, सुपरमार्ट व FMCG (500+ ऑटो-कैटलॉग)</option>
                   <option value="apparel_fashion">👗 कपड़े, गारमेंट्स व फुटवियर</option>
@@ -162,13 +192,13 @@ export default function OnboardingWizardPage() {
           {step === 2 && (
             <div className="space-y-6">
               <div>
-                <h2 className="text-2xl font-black tracking-tight text-white">पहली मुख्य दुकान (HQ Store)</h2>
-                <p className="text-xs text-slate-400 mt-1">आपकी पहली दुकान को सिस्टम HQ-001 कोड से रजिस्टर करेगा (भविष्य में 100 दुकानें जोड़ सकते हैं)।</p>
+                <h2 className="text-2xl font-black tracking-tight text-card-primary">पहली मुख्य दुकान (HQ Store)</h2>
+                <p className="text-xs text-card-muted mt-1">आपकी पहली दुकान को सिस्टम HQ-001 कोड से रजिस्टर करेगा (भविष्य में 100 दुकानें जोड़ सकते हैं)।</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-2">शाखा का नाम</label>
+                  <label className="block text-xs font-bold text-card-primary mb-2">शाखा का नाम</label>
                   <input
                     type="text"
                     value={branchName}
@@ -178,7 +208,7 @@ export default function OnboardingWizardPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-2">इनवॉइस प्रीफ़िक्स</label>
+                  <label className="block text-xs font-bold text-card-primary mb-2">इनवॉइस प्रीफ़िक्स</label>
                   <input
                     type="text"
                     value={invoicePrefix}
@@ -190,7 +220,7 @@ export default function OnboardingWizardPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-2">दुकान का GSTIN (वैकल्पिक)</label>
+                <label className="block text-xs font-bold text-card-primary mb-2">दुकान का GSTIN (वैकल्पिक)</label>
                 <input
                   type="text"
                   value={gstin}
@@ -201,7 +231,7 @@ export default function OnboardingWizardPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-2">दुकान का पता व शहर</label>
+                <label className="block text-xs font-bold text-card-primary mb-2">दुकान का पता व शहर</label>
                 <input
                   type="text"
                   value={address}
@@ -230,7 +260,7 @@ export default function OnboardingWizardPage() {
               <div className="flex gap-4">
                 <button
                   onClick={() => setStep(1)}
-                  className="px-6 py-3.5 rounded-2xl bg-white/5 border border-white/10 text-xs font-bold text-slate-300 hover:bg-white/10 transition-all cursor-pointer"
+                  className="px-6 py-3.5 rounded-2xl bg-white/5 border border-white/10 text-xs font-bold text-card-primary hover:bg-white/10 transition-all cursor-pointer"
                 >
                   ← पीछे
                 </button>
@@ -247,25 +277,25 @@ export default function OnboardingWizardPage() {
           {step === 3 && (
             <div className="space-y-6">
               <div>
-                <h2 className="text-2xl font-black tracking-tight text-white">सिस्टम लॉन्च के लिए तैयार है!</h2>
-                <p className="text-xs text-slate-400 mt-1">नीचे दिए गए विवरण की पुष्टि करें। "लॉन्च वर्कस्पेस" दबाते ही आपका सुरक्षित पोर्टल लाइव हो जाएगा।</p>
+                <h2 className="text-2xl font-black tracking-tight text-card-primary">सिस्टम लॉन्च के लिए तैयार है!</h2>
+                <p className="text-xs text-card-muted mt-1">नीचे दिए गए विवरण की पुष्टि करें। "लॉन्च वर्कस्पेस" दबाते ही आपका सुरक्षित पोर्टल लाइव हो जाएगा।</p>
               </div>
 
               <div className="p-5 rounded-2xl bg-white/5 border border-white/10 space-y-3 text-xs">
                 <div className="flex justify-between border-b border-white/5 pb-2">
-                  <span className="text-slate-400">कंपनी (Tenant):</span>
-                  <span className="font-bold text-white">{businessName}</span>
+                  <span className="text-card-muted">कंपनी (Tenant):</span>
+                  <span className="font-bold text-card-primary">{businessName}</span>
                 </div>
                 <div className="flex justify-between border-b border-white/5 pb-2">
-                  <span className="text-slate-400">डिजिटल डोमेन:</span>
+                  <span className="text-card-muted">डिजिटल डोमेन:</span>
                   <span className="font-bold text-amber-400">https://{subdomain}.kosisko.com</span>
                 </div>
                 <div className="flex justify-between border-b border-white/5 pb-2">
-                  <span className="text-slate-400">पहली शाखा (HQ):</span>
-                  <span className="font-bold text-white">{branchName || `${businessName} - Main Store`} (Code: HQ-001)</span>
+                  <span className="text-card-muted">पहली शाखा (HQ):</span>
+                  <span className="font-bold text-card-primary">{branchName || `${businessName} - Main Store`} (Code: HQ-001)</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">आपका रोल:</span>
+                  <span className="text-card-muted">आपका रोल:</span>
                   <span className="font-bold text-cyan-400">Tenant Administrator (Full Control)</span>
                 </div>
               </div>
@@ -274,7 +304,7 @@ export default function OnboardingWizardPage() {
                 <button
                   disabled={loading}
                   onClick={() => setStep(2)}
-                  className="px-6 py-3.5 rounded-2xl bg-white/5 border border-white/10 text-xs font-bold text-slate-300 hover:bg-white/10 transition-all cursor-pointer"
+                  className="px-6 py-3.5 rounded-2xl bg-white/5 border border-white/10 text-xs font-bold text-card-primary hover:bg-white/10 transition-all cursor-pointer"
                 >
                   ← बदलाव करें
                 </button>
@@ -299,19 +329,19 @@ export default function OnboardingWizardPage() {
               <span className="text-[10px] font-black uppercase tracking-wider text-amber-400 bg-amber-400/10 px-2.5 py-1 rounded-full border border-amber-400/20">
                 Live Storefront Card
               </span>
-              <span className="text-[10px] text-slate-500">v1.0 Ready</span>
+              <span className="text-[10px] text-os-subtle">v1.0 Ready</span>
             </div>
 
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-400 to-amber-600 flex items-center justify-center text-slate-950 font-black text-2xl shadow-xl shadow-amber-500/20 mb-4">
               {businessName ? businessName.charAt(0).toUpperCase() : 'K'}
             </div>
 
-            <h3 className="text-xl font-black text-white tracking-tight">{businessName || 'आपकी दुकान का नाम'}</h3>
+            <h3 className="text-xl font-black text-card-primary tracking-tight">{businessName || 'आपकी दुकान का नाम'}</h3>
             <p className="text-xs text-amber-400 font-mono mt-1 font-bold">
               {subdomain ? `${subdomain}.kosisko.com` : 'your-shop.kosisko.com'}
             </p>
 
-            <div className="mt-6 pt-4 border-t border-white/10 space-y-2 text-[11px] text-slate-400">
+            <div className="mt-6 pt-4 border-t border-white/10 space-y-2 text-[11px] text-card-muted">
               <div className="flex items-center gap-2">
                 <span className="text-emerald-400">✓</span> <span>सेंट्रल क्लाउड आर्किटेक्चर (100 ब्रांच सपोर्ट)</span>
               </div>
@@ -327,7 +357,7 @@ export default function OnboardingWizardPage() {
       </main>
 
       {/* पाद लेख (Footer) */}
-      <footer className="px-8 py-4 border-t border-white/10 text-center text-slate-500 text-xs">
+      <footer className="px-8 py-4 border-t border-white/10 text-center text-os-subtle text-xs">
         Powered by Kosisko Ventures Private Limited • Built for Enterprise Scale
       </footer>
     </div>

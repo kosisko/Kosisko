@@ -213,6 +213,7 @@ class UserProfile(models.Model):
     branch = models.ForeignKey(StoreBranch, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_staff')
 
     # मैजिक लॉगिन टोकन
+    studio_preferences = models.JSONField(default=dict, blank=True)
     magic_login_token = models.CharField(max_length=255, blank=True, null=True, db_index=True)
 
     # संपर्क व व्यक्तिगत विवरण

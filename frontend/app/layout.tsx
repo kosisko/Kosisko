@@ -1,5 +1,6 @@
 import SpeedOptimizer from '@/components/SpeedOptimizer';
 import SessionDraftGuard from '../components/SessionDraftGuard';
+import GlobalAutoFocus from '@/components/GlobalAutoFocus';
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import 'bootstrap-icons/font/bootstrap-icons.css';
@@ -53,6 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </AppProvider>
         </ThemeProvider>
               <SessionDraftGuard />
+          <GlobalAutoFocus />
       </body>
     </html>
   );

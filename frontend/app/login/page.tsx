@@ -171,7 +171,7 @@ function AuthContent() {
 
     if (isLogoutQuery === 'true' || isLoggedOutStorage === 'true') {
       setGreeting('Welcome Back');
-      router.prefetch('/customer/marketplace');
+      router.prefetch('/customer/dashboard');
       sessionStorage.removeItem('kosisko_logout_active');
     } else {
       const hour = new Date().getHours();
@@ -370,8 +370,8 @@ function AuthContent() {
           localStorage.setItem('kosisko_token', verifyData.access_token);
         }
         sessionStorage.setItem('kosisko_splash_played', '1');
-        const safeTarget = (verifyData.redirect_url && verifyData.redirect_url.startsWith('/')) ? verifyData.redirect_url : '/customer/marketplace';
-        window.location.replace(safeTarget);
+        const safeTarget = (verifyData.redirect_url && verifyData.redirect_url.startsWith('/')) ? verifyData.redirect_url : '/customer/dashboard';
+        navigateAfterAuthWithSubdomain(verifyData.user?.subdomain, safeTarget);
       } else {
         throw new Error(verifyData.error || 'बायोमेट्रिक पहचान विफल रही।');
       }
@@ -757,11 +757,11 @@ function AuthContent() {
                       }
                     }
                     sessionStorage.setItem('kosisko_splash_played', '1');
-                    window.location.replace(dest);
+                    navigateAfterAuthWithSubdomain(data.tenant_subdomain || data.subdomain, '/customer/dashboard');
                   })()
         } else {
           sessionStorage.setItem('kosisko_splash_played', '1');
-          window.location.replace('/customer/marketplace');
+          window.location.replace('/customer/dashboard');
         }
       } else {
         setErrorMessage(data.message || data.error || 'Authentication failed. Please verify credentials.');
@@ -1409,6 +1409,40 @@ async function safeJson(res: Response) {
         : `Unexpected gateway response (${res.status}). Please refresh and try again.`
     );
   }
+}
+
+
+function navigateAfterAuthWithSubdomain(subdomainRaw: string | null | undefined, defaultPath = '/customer/dashboard') {
+  if (typeof window === 'undefined') return;
+  const isTwaStandalone =
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as any).standalone === true ||
+    document.referrer.startsWith('android-app://') ||
+    localStorage.getItem('kosisko_app_mode') === 'twa' ||
+    document.cookie.includes('kosisko_is_twa=true');
+
+  if (isTwaStandalone) {
+    localStorage.setItem('kosisko_app_mode', 'twa');
+    document.cookie = 'kosisko_is_twa=true; path=/; domain=.kosisko.com; SameSite=Lax; Secure';
+  }
+
+  const cleanSub = (subdomainRaw || '').trim().toLowerCase().replace(/^https?:\/\//, '').split('.kosisko.com')[0].split('/')[0].trim();
+  const host = window.location.hostname.toLowerCase();
+  const reserved = ['www', 'api', 'admin', 'mail', 'app', 'kosisko', 'kosisko.com', 'workspace', '__none__', 'localhost'];
+  const hasValidSub = Boolean(cleanSub && !cleanSub.includes('.') && !reserved.includes(cleanSub));
+
+  const cookieVal = hasValidSub ? cleanSub : '__none__';
+  document.cookie = `kosisko_active_tenant=${cookieVal}; path=/; domain=.kosisko.com; SameSite=Lax; Secure`;
+  document.cookie = `kosisko_active_tenant=${cookieVal}; path=/; SameSite=Lax; Secure`;
+
+  if (!isTwaStandalone && host.endsWith('kosisko.com')) {
+    const targetOrigin = hasValidSub ? `https://${cleanSub}.kosisko.com` : 'https://kosisko.com';
+    if (window.location.origin !== targetOrigin) {
+      window.location.replace(`${targetOrigin}${defaultPath}`);
+      return;
+    }
+  }
+  window.location.replace(defaultPath);
 }
 
 export default function LoginPage() {
