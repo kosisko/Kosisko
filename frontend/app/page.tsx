@@ -2,14 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import CommandPalette from '@/components/CommandPalette';
-import CustomizerPanel from '@/components/CustomizerPanel';
-import { useTheme } from '@/context/ThemeContext';
 
 export default function HomeCommandCenter() {
   const router = useRouter();
-  const { themeConfig } = useTheme();
-
+  
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [isCustomizerOpen, setIsCustomizerOpen] = useState(false);
   const [systemStatus, setSystemStatus] = useState('Operational (0.1ms Latency)');
@@ -240,17 +236,6 @@ export default function HomeCommandCenter() {
       </footer>
 
       {/* Existing Modals */}
-      <CommandPalette
-        isOpen={isCommandOpen}
-        onClose={() => setIsCommandOpen(false)}
-        onSelectModule={handleSelectModule}
-        onRunCommand={handleRunCommand}
-      />
-
-      <CustomizerPanel
-        isOpen={isCustomizerOpen}
-        onClose={() => setIsCustomizerOpen(false)}
-      />
 
     </div>
   );

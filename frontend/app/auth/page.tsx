@@ -2,12 +2,10 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useTheme } from '@/context/ThemeContext';
 
 export default function AuthPage() {
   const router = useRouter();
-  const { themeConfig } = useTheme();
-
+  
   // State to toggle between Login and Signup
   const [isSignup, setIsSignup] = useState(false);
   const [email, setEmail] = useState('');
@@ -47,7 +45,7 @@ export default function AuthPage() {
         {/* Header Branding */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-400 text-xl font-black mb-3 shadow-[0_0_15px_rgba(0,243,255,0.3)]">
-            {themeConfig.logoText || 'K'}
+            K
           </div>
           <h1 className="text-2xl font-black tracking-tight text-white">
             {isSignup ? 'Create Enterprise Account' : 'Welcome Back'}
